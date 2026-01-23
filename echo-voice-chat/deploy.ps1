@@ -25,16 +25,11 @@ Write-Host "2. Connecting to Server..." -ForegroundColor Yellow
 
 # Script Logic:
 # 1. Check if folder exists. If not, clone it.
-# 2. If exists, pull.
+# 2. Backup DB -> Pull -> Restore DB (To avoid conflict)
 # 3. Install deps, Build.
 # 4. Restart PM2 on port 3002.
-# Note: Since Echo is a subdirectory in local `scratch`, 
-# BUT on server we might want it isolated or as part of the repo.
-# If repo is `job-tracker`, and `echo-voice-chat` is a folder inside it:
-# We should pull the repo in `/var/www/job-tracker` (which exists)
-# And then run echo from the subdir.
 
-$commands = "cd /var/www/job-tracker && echo '[Server] Pulling Repo...' && git pull && echo '[Server] Installing Echo Deps...' && cd echo-voice-chat && npm i && echo '[Server] Building Echo...' && npm run build && echo '[Server] Restarting Echo on Port 3002...' && pm2 start npm --name 'echo-app' -- start -- -p 3002 || pm2 restart echo-app && echo '[Server] Deployment Complete!'"
+$commands = "cd /var/www/job-tracker && mv service-job-tracker/job_tracker.sqlite service-job-tracker/job_tracker.sqlite.bak 2>/dev/null || true && echo '[Server] Pulling Repo...' && git pull && mv service-job-tracker/job_tracker.sqlite.bak service-job-tracker/job_tracker.sqlite 2>/dev/null || true && echo '[Server] Installing Echo Deps...' && cd echo-voice-chat && npm i && echo '[Server] Building Echo...' && npm run build && echo '[Server] Restarting Echo on Port 3002...' && pm2 start npm --name 'echo-app' -- start -- -p 3002 || pm2 restart echo-app && echo '[Server] Deployment Complete!'"
 
 ssh $ServerUser@$ServerIP $commands
 
