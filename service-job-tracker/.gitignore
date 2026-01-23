@@ -1,0 +1,14 @@
+# Dependencies
+node_modules
+/dist
+
+# Database
+*.sqlite
+*.sqlite-journal
+
+# Environment
+.env
+
+# OS
+.DS_Store
+Thumbs.db
