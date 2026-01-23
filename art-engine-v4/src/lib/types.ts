@@ -9,7 +9,7 @@ export interface Agent {
     type: AgentType;
     status: 'IDLE' | 'WORKING' | 'ERROR';
     capabilities?: string[];
-    skills?: string[]; // Simplified for v0.4
+    skills?: (string | any)[]; // Support both simple strings and complex skill objects
 }
 
 export interface Message {
