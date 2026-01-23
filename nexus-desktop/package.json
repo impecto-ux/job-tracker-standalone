@@ -1,0 +1,15 @@
+{
+    "name": "nexus-desktop",
+    "version": "1.0.0",
+    "description": "Desktop Client for Nexus / JobTracker",
+    "main": "main.js",
+    "scripts": {
+        "start": "electron ."
+    },
+    "author": "Nexus Team",
+    "license": "ISC",
+    "devDependencies": {
+        "electron": "^40.0.0",
+        "electron-builder": "^26.4.0"
+    }
+}

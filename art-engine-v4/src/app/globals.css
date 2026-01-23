@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+:root {
+  --background: #000000;
+  --foreground: #FFFFFF;
+}
+
+@theme {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@layer utilities {
+
+  /* BRAND SYSTEM: ECHO ZERO OVERRIDE */
+  .glass-panel {
+    /* No Blur (Low Visual Noise) */
+    @apply bg-black border border-white/20 shadow-none;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+    /* Minimal */
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: #000;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #333;
+    /* High Contrast vs Track */
+    border-radius: 0px;
+    /* Sharp Edges */
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #fff;
+  }
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  letter-spacing: -0.02em;
+  /* Tighter, cleaner */
+}

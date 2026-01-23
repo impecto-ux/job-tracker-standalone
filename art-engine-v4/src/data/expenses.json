@@ -1,0 +1,37 @@
+[
+  {
+    "id": "96r15h",
+    "item": "J6",
+    "amount": 6000,
+    "date": "2026-01-22T00:00:00.000Z",
+    "category": "entertainment"
+  },
+  {
+    "id": "xgjin5",
+    "item": "ChatGPT (Abonelik)",
+    "amount": 700,
+    "date": "2026-01-01T00:00:00.000Z",
+    "category": "bills"
+  },
+  {
+    "id": "g8wp1r",
+    "item": "FOCUS BENZIN",
+    "amount": 2500,
+    "date": "2026-01-19T00:00:00.000Z",
+    "category": "transport"
+  },
+  {
+    "id": "yefhb",
+    "item": "J6",
+    "amount": 6000,
+    "date": "2026-01-07T00:00:00.000Z",
+    "category": "entertainment"
+  },
+  {
+    "id": "nbin",
+    "item": "J6",
+    "amount": 6000,
+    "date": "2026-01-14T00:00:00.000Z",
+    "category": "entertainment"
+  }
+]

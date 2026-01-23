@@ -1,0 +1,94 @@
+/* Navbar Container */
+.navbar {
+    position: fixed;
+    top: 0;
+    width: 100%;
+    height: 68px;
+    z-index: 100;
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.7) 10%, transparent);
+    transition: background-color var(--duration-normal) var(--ease-smooth);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 var(--spacing-lg);
+    box-sizing: border-box;
+}
+
+.navbar.scrolled {
+    background-color: var(--bg-main);
+}
+
+/* Logo */
+.navbar-logo {
+    display: flex;
+    align-items: center;
+}
+
+.navbar-logo img {
+    height: 30px;
+    /* Constrain height */
+    width: auto;
+    cursor: pointer;
+}
+
+/* Navigation Links */
+.navbar-links {
+    display: flex;
+    list-style: none;
+    gap: var(--spacing-lg);
+    margin: 0;
+    padding: 0;
+    margin-left: var(--spacing-xl);
+    /* Spacing from logo */
+    flex-grow: 1;
+    /* Push actions to the right */
+}
+
+.navbar-links li a {
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: var(--weight-medium);
+    cursor: pointer;
+    transition: color var(--duration-fast);
+    color: var(--text-muted);
+}
+
+.navbar-links li a:hover,
+.navbar-links li a.active {
+    color: var(--text-main);
+    font-weight: var(--weight-bold);
+}
+
+/* Right Actions (Search, Bell, Profile) */
+.navbar-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-lg);
+}
+
+.navbar-actions i {
+    color: var(--text-main);
+    font-size: 1.2rem;
+    cursor: pointer;
+    opacity: 0.9;
+    transition: transform var(--duration-fast), opacity var(--duration-fast);
+}
+
+.navbar-actions i:hover {
+    transform: scale(1.1);
+    opacity: 1;
+}
+
+/* User Profile */
+.user-profile {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+.user-profile img {
+    width: 32px;
+    height: 32px;
+    border-radius: 4px;
+    object-fit: cover;
+}

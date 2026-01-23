@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Console Theme (Default) */
+body {
+  background-color: #171717;
+  color: #fff;
+  font-family: monospace;
+}
+
+/* Scoped Brutalist Theme for Artifacts */
+.brutalist-theme {
+  --background: #050505;
+  --foreground: #F0F0F0;
+  --accent: #FF3300;
+  background: var(--background);
+  color: var(--foreground);
+  cursor: crosshair;
+}
+
+.brutalist-theme ::selection {
+  background: var(--accent);
+  color: #000;
+}

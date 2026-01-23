@@ -1,0 +1,40 @@
+.content-row {
+    margin-bottom: var(--spacing-lg);
+    position: relative;
+    z-index: 20;
+}
+
+.row-title {
+    font-size: 1.4rem;
+    font-weight: var(--weight-medium);
+    color: #e5e5e5;
+    margin-left: var(--spacing-lg);
+    /* Match container padding */
+    margin-bottom: 0.5rem;
+    transition: color var(--duration-fast);
+}
+
+.row-title:hover {
+    color: #fff;
+}
+
+.row-scroller {
+    overflow-x: auto;
+    padding: 2rem var(--spacing-lg);
+    /* Extra vertical padding for hover scaling */
+    /* Hide scrollbar */
+    -ms-overflow-style: none;
+    /* IE and Edge */
+    scrollbar-width: none;
+    /* Firefox */
+}
+
+.row-scroller::-webkit-scrollbar {
+    display: none;
+}
+
+.row-inner {
+    display: flex;
+    gap: var(--spacing-sm);
+    width: max-content;
+}

@@ -1,0 +1,43 @@
+:root {
+    /* Core Palette - Dark Fantasy */
+    --bg-dark: #0a0a0c;
+    --bg-panel: #141418;
+    --bg-card: #1c1c24;
+
+    /* Accents */
+    --accent-gold: #cfb53b;
+    --accent-gold-dim: #8a7826;
+    --accent-red: #c0392b;
+    /* Health/Attack */
+    --accent-blue: #2980b9;
+    /* Mana/Shield */
+    --accent-green: #27ae60;
+    /* Healing */
+
+    /* Borders & Polish */
+    --border-gold: 2px solid var(--accent-gold);
+    --border-stone: 2px solid #4a4a4a;
+
+    /* Text */
+    --text-main: #ecf0f1;
+    --text-muted: #bdc3c7;
+    --text-highlight: #f1c40f;
+
+    /* Spacing */
+    --spacing-sm: 0.5rem;
+    --spacing-md: 1rem;
+    --spacing-lg: 1.5rem;
+
+    /* Animations */
+    --ease-out-back: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+body {
+    margin: 0;
+    background-color: var(--bg-dark);
+    color: var(--text-main);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    /* Fallback until fonts load */
+    overflow: hidden;
+    /* Prevent scroll for game app feel */
+}
