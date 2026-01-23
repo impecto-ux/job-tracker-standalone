@@ -13,11 +13,16 @@ export const getBaseUrl = () => {
     return 'http://localhost:3001';
 };
 
+// Socket URL stays at root (Nginx handles /socket.io)
 export const getSocketUrl = () => {
     return getBaseUrl();
 };
 
+// API URL needs /api prefix for Nginx to proxy correctly
 export const getApiUrl = () => {
-    // If backend logic changes (e.g. /api prefix), modify here
-    return getBaseUrl();
+    const base = getBaseUrl();
+    if (base.includes('37.148.214.203')) {
+        return `${base}/api`;
+    }
+    return base;
 };
