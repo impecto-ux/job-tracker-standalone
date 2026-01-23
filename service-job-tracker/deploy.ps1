@@ -12,30 +12,11 @@ git add .
 git commit -m "Auto-deploy: $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
 git push origin main
 
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "[Error] Git Push Failed! Deployment aborted." -ForegroundColor Red
-    exit 1
-}
-
 # 2. Remote Update
 Write-Host "2. Connecting to Server to Pull & Restart..." -ForegroundColor Yellow
 
-$commands = "
-    cd $RemotePath
-    echo '[Server] Pulling changes...'
-    git pull
-    
-    echo '[Server] Installing dependencies...'
-    npm i
-    
-    echo '[Server] Building...'
-    npm run build
-    
-    echo '[Server] Restarting Backend...'
-    pm2 restart backend
-    
-    echo '[Server] Deployment Complete!'
-"
+# Using a single line command to avoid Windows CRLF (\r) issues on Linux Bash
+$commands = "cd $RemotePath && echo '[Server] Pulling...' && git pull && echo '[Server] Installing...' && npm i && echo '[Server] Building...' && npm run build && echo '[Server] Restarting...' && pm2 restart backend && echo '[Server] Done!'"
 
 ssh $ServerUser@$ServerIP $commands
 
