@@ -770,7 +770,13 @@ export default function JobTrackerApp() {
 
                             {/* Profile Badge & Dropdown */}
                             {auth.user && (
-                                <div className="relative profile-dropdown-container">
+                                <div className="relative profile-dropdown-container flex items-center">
+                                    {/* Points Badge */}
+                                    <div className="hidden md:flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 border border-amber-500/20 rounded-full mr-2" title="Total XP Earned">
+                                        <div className="text-amber-500"><Sparkles size={12} fill="currentColor" /></div>
+                                        <span className="text-xs font-bold text-amber-500 tabular-nums">{(auth.user.totalPoints || 0).toLocaleString()} XP</span>
+                                    </div>
+
                                     <button
                                         onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
                                         className={`flex items-center gap-2 pl-2 pr-2 py-1 rounded-full transition-all border ${isUserMenuOpen
@@ -1538,7 +1544,12 @@ export default function JobTrackerApp() {
                                                             {/* Footer Content */}
                                                             <div className="p-3 flex flex-col gap-1.5 flex-1 bg-[#09090b] relative">
                                                                 <div className="absolute top-0 left-0 right-0 h-[1px] opacity-20" style={{ backgroundColor: groupColorHsl }} />
-                                                                <div className="flex items-center gap-2 mb-1"><span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: groupColorHsl }} /><span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">{task.dept}</span><span className="text-zinc-700 text-[9px] ml-auto font-mono">#{task.id}</span></div>
+                                                                <div className="flex items-center gap-2 mb-1">
+                                                                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: groupColorHsl }} />
+                                                                    <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">{task.dept}</span>
+                                                                    {task.score > 0 && <span className="text-[9px] font-bold text-amber-500/80 bg-amber-500/10 px-1 rounded ml-1">+{task.score} XP</span>}
+                                                                    <span className="text-zinc-700 text-[9px] ml-auto font-mono">#{task.id}</span>
+                                                                </div>
                                                                 <h3 className="text-sm font-bold text-white leading-tight mb-auto" title={task.title}>{task.title}</h3>
                                                                 <div className="mt-1 text-[10px] text-zinc-500 line-clamp-2 leading-relaxed">{task.description || "No description provided."}</div>
                                                                 <div className="flex items-center justify-between border-t border-white/5 pt-2 mt-auto min-h-[29px]">

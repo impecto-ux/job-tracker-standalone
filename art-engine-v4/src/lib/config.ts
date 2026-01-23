@@ -6,23 +6,19 @@ export const getBaseUrl = () => {
 
     // Production Cloud
     if (hostname === '37.148.214.203') {
-        return 'http://37.148.214.203';
+        return 'http://37.148.214.203:3001';
     }
 
     // Localhost
     return 'http://localhost:3001';
 };
 
-// Socket URL stays at root (Nginx handles /socket.io)
+// Socket URL stays at root (Nginx handles /socket.io) -> Actually port 3001 for now
 export const getSocketUrl = () => {
     return getBaseUrl();
 };
 
-// API URL needs /api prefix for Nginx to proxy correctly
+// API URL matches Base URL (Backend routes are at root, not /api)
 export const getApiUrl = () => {
-    const base = getBaseUrl();
-    if (base.includes('37.148.214.203')) {
-        return `${base}/api`;
-    }
-    return base;
+    return getBaseUrl();
 };

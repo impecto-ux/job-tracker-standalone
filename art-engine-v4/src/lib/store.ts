@@ -54,6 +54,7 @@ export interface User {
     fullName: string;
     email: string;
     role: string;
+    totalPoints?: number;
 }
 
 export interface AuthState {
