@@ -40,6 +40,9 @@ export class User {
     @Column({ name: 'token_usage', default: 0 })
     tokenUsage: number;
 
+    @Column({ name: 'total_points', default: 0 })
+    totalPoints: number;
+
     @ManyToOne(() => Department, (dept) => dept.users, { nullable: true })
     @JoinColumn({ name: 'department_id' })
     department: Department;

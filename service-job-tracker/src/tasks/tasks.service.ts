@@ -7,6 +7,7 @@ import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { ChannelsService } from '../channels/channels.service';
 import { ScoringService } from '../scoring/scoring.service';
+import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class TasksService implements OnApplicationBootstrap {
@@ -18,10 +19,10 @@ export class TasksService implements OnApplicationBootstrap {
     @Inject(forwardRef(() => ChannelsService))
     private channelsService: ChannelsService,
     private scoringService: ScoringService,
+    private usersService: UsersService,
   ) { }
 
   async onApplicationBootstrap() {
-    // ... (rest of bootstrap untouched)
     const count = await this.tasksRepository.count();
     if (count === 0) {
       console.log("Seeding default tasks...");
@@ -117,6 +118,37 @@ export class TasksService implements OnApplicationBootstrap {
       }
     }
 
+    // EDGE CASE: If task has no score (old task) and is being marked DONE, calculate it now
+    if (newStatus === 'done' && task.score === 0) {
+      const prediction = this.scoringService.predict(task.title + ' ' + task.description);
+      if (prediction) {
+        task.score = prediction.score;
+        task.category = prediction.category;
+        console.log(`[TasksService] Late-Restored Score for Task #${id}: ${task.score}`);
+      }
+    }
+
+    // Award/Deduct Points based on Status Change
+    if (newStatus && oldStatus !== newStatus) {
+      console.log(`[TasksService] Status Change: ${oldStatus} -> ${newStatus} for Task #${id} (Owner: ${task.ownerId}, Score: ${task.score})`);
+
+      if (newStatus === 'done' && oldStatus !== 'done') {
+        // Completed: Add Points
+        if (task.ownerId) {
+          console.log(`[TasksService] Awarding ${task.score} points to User ${task.ownerId}`);
+          await this.usersService.addPoints(task.ownerId, task.score);
+        } else {
+          console.warn(`[TasksService] Cannot award points: Task #${id} has no owner.`);
+        }
+      } else if (oldStatus === 'done' && newStatus !== 'done') {
+        // Un-completed: Revert Points
+        if (task.ownerId) {
+          console.log(`[TasksService] Deducting ${task.score} points from User ${task.ownerId}`);
+          await this.usersService.addPoints(task.ownerId, -task.score);
+        }
+      }
+    }
+
     const updatedTask = await this.tasksRepository.save(task);
 
     // 2. Add Comment if provided
@@ -164,9 +196,6 @@ export class TasksService implements OnApplicationBootstrap {
 
     return updatedTask;
   }
-
-  // --- AI / Scoring Logic ---
-  // Deleted old predictScore implementation as it is now handled by ScoringService
 
   async addComment(taskId: number, content: string, userId: number, mediaUrl?: string, mediaType?: string): Promise<Comment> {
     const task = await this.findOne(taskId);

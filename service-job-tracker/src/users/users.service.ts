@@ -100,4 +100,9 @@ export class UsersService {
         // Simple increment
         await this.usersRepository.increment({ id: userId }, 'tokenUsage', tokens);
     }
+
+    async addPoints(userId: number, points: number) {
+        await this.usersRepository.increment({ id: userId }, 'totalPoints', points);
+        console.log(`[UsersService] Added ${points} points to User ${userId}`);
+    }
 }
