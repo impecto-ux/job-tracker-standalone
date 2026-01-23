@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Discord Theme Colors */
+  --background: #313338;
+  /* Main Chat BG */
+  --foreground: #F2F3F5;
+  /* Text */
+
+  --primary: #5865F2;
+  /* Blurple */
+
+  --bg-dark: #1E1F22;
+  /* Sidebar / Deepest */
+  --bg-secondary: #2B2D31;
+  /* Channel List / Light Gray */
+  --bg-tertiary: #404249;
+  /* Hover States */
+
+  --border: #1E1F22;
+
+  --status-online: #23A559;
+  --status-dnd: #F23F42;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: 'gg sans', 'Whitney', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  overflow: hidden;
+}
+
+/* Discord Custom Utilities */
+.discord-button {
+  background-color: var(--primary);
+  color: white;
+  transition: background-color 0.2s;
+}
+
+.discord-button:hover {
+  background-color: #4752C4;
+}
+
+.discord-input {
+  background-color: #1E1F22;
+  border: none;
+  color: #DBDEE1;
+}
+
+.discord-input:focus {
+  outline: none;
+}
