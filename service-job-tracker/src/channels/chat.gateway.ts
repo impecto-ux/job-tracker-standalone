@@ -3,7 +3,8 @@ import { Server, Socket } from 'socket.io';
 
 @WebSocketGateway({
     cors: {
-        origin: '*', // Allow all for dev
+        origin: ['http://localhost:3000', 'http://37.148.214.203', 'http://localhost'],
+        credentials: true
     },
 })
 export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {

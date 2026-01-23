@@ -42,3 +42,8 @@ logs/
 /uploads/
 /service-job-tracker/uploads/
 !/service-job-tracker/src/uploads/
+
+# Desktop App Build
+/nexus-desktop/dist/
+*.zip
+*.exe

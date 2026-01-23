@@ -14,9 +14,8 @@ function createWindow() {
         icon: path.join(__dirname, 'icon.png') // Placeholder for icon
     });
 
-    // In development, load the running web server
-    // In production, we would load the build file: win.loadFile('dist/index.html')
-    win.loadURL('http://localhost:3000');
+    // Load the live cloud server
+    win.loadURL('http://37.148.214.203');
 }
 
 app.whenReady().then(() => {
