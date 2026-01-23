@@ -38,6 +38,7 @@ logs/
 /service-job-tracker/dist/
 /service-job-tracker/node_modules/
 
-# Uploads
-uploads/
+# Uploads (Files)
+/uploads/
 /service-job-tracker/uploads/
+!/service-job-tracker/src/uploads/
