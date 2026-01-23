@@ -1,23 +1,20 @@
-# Deploy Script for Job Tracker Backend
-
+# Deploy Server (Fixed)
 $ServerIP = "37.148.214.203"
 $ServerUser = "root"
-$RemotePath = "/var/www/job-tracker/service-job-tracker"
 
-Write-Host "[Deploy] Starting Deployment to $ServerIP..." -ForegroundColor Cyan
+Write-Host "🚀 Deploying to Server..." -ForegroundColor Cyan
 
-# 1. Local Git Push
-Write-Host "1. Pushing local changes to GitHub..." -ForegroundColor Yellow
+# 1. Commit and Push Local Changes
 git add .
-git commit -m "Auto-deploy: $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
+git commit -m "Fix: Enable CORS and update deploy script"
 git push origin main
 
-# 2. Remote Update
-Write-Host "2. Connecting to Server to Pull & Restart..." -ForegroundColor Yellow
+# 2. Remote Deployment
+# Using single quotes for the remote command string to prevent PowerShell from parsing special chars like && or ;
+# We also REMOVED the database moving logic because sqlite should be ignored by git anyway.
+$RemoteCmd = 'cd /var/www/job-tracker/service-job-tracker; git pull; npm install; npm run build; pm2 restart backend'
 
-# Using a single line command to avoid Windows CRLF (\r) issues on Linux Bash
-$commands = "cd $RemotePath && echo '[Server] Pulling...' && git pull && echo '[Server] Installing...' && npm i && echo '[Server] Building...' && npm run build && echo '[Server] Restarting...' && pm2 restart backend && echo '[Server] Done!'"
+# Execute SSH
+ssh $ServerUser@$ServerIP $RemoteCmd
 
-ssh $ServerUser@$ServerIP $commands
-
-Write-Host "[Success] All Done! Check valid at http://$ServerIP" -ForegroundColor Green
+Write-Host "✅ Deployment Complete!" -ForegroundColor Green
