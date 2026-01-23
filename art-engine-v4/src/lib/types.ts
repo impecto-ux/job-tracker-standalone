@@ -16,8 +16,8 @@ export interface Message {
     id: string;
     sender: 'USER' | 'SYSTEM' | string; // agent name
     completedAt?: string;
-    score: number;
-    category: string;
+    score?: number;
+    category?: string;
     content: string;
     timestamp: string;
     type: 'user' | 'system' | 'error' | 'success' | 'warning' | 'info';
