@@ -3,7 +3,7 @@ import { Server, Socket } from 'socket.io';
 
 @WebSocketGateway({
     cors: {
-        origin: ['http://localhost:3000', 'http://37.148.214.203', 'http://localhost'],
+        origin: true,
         credentials: true
     },
 })
