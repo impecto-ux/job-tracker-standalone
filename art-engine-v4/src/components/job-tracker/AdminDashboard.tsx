@@ -153,13 +153,20 @@ const BotNode = ({ data }: { data: any }) => {
 
             <div className="p-4 flex gap-4 items-center">
                 <div className="flex-1">
-                    <div className="text-3xl font-mono font-bold text-white mb-1">{data.botCount || 0}</div>
+                    <div className="text-3xl font-mono font-bold text-white mb-1">
+                        {data.botCount !== undefined ? data.botCount : '...'}
+                    </div>
                     <div className="text-xs text-zinc-500 font-bold uppercase tracking-wider">Active Units</div>
                 </div>
                 <div className="w-12 h-12 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400">
                     <Bot size={24} />
                 </div>
             </div>
+            {data.subtitle && (
+                <div className="px-4 pb-2 text-[9px] text-zinc-600 font-mono uppercase truncate">
+                    {data.subtitle}
+                </div>
+            )}
         </div>
     );
 };
@@ -316,54 +323,62 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose, initial
     // Fetch Logic
     const fetchSystemStats = async () => {
         try {
-            const [statsRes, archivedRes, usersRes, agentsRes] = await Promise.all([
-                api.get('/tasks/stats/system'),
-                api.get('/groups?archived=true'),
-                api.get('/users'),
-                api.get('/squad-agents')
+            const results = await Promise.allSettled([
+                api.get(`/tasks/stats/system?t=${Date.now()}`),
+                api.get(`/groups?archived=true&t=${Date.now()}`),
+                api.get(`/users?t=${Date.now()}`),
+                api.get(`/squad-agents?t=${Date.now()}`)
             ]);
 
-            const sysBots = usersRes.data.filter((u: any) => u.isSystemBot).length;
-            const activeAgents = agentsRes.data.filter((a: any) => a.isActive).length;
+            const statsRes = results[0].status === 'fulfilled' ? (results[0].value.data?.data || results[0].value.data) : null;
+            const archivedRes = results[1].status === 'fulfilled' ? (results[1].value.data?.data || results[1].value.data) : [];
+            const usersRes = results[2].status === 'fulfilled' ? (results[2].value.data?.data || results[2].value.data) : [];
+            const agentsRes = results[3].status === 'fulfilled' ? (results[3].value.data?.data || results[3].value.data) : [];
 
-            if (statsRes.data) {
-                const newData = {
-                    dbSize: statsRes.data.dbSize,
-                    totalRecords: statsRes.data.totalTasks,
-                    cacheHitRate: '94%',
-                    uptime: statsRes.data.uptime,
-                    activeConnections: 42,
-                    latency: statsRes.data.latency,
-                    realCounts: {
-                        tasks: statsRes.data.totalTasks,
-                        users: statsRes.data.totalUsers,
-                        activeTasks: statsRes.data.activeTasks,
-                        completedTasks: statsRes.data.completedTasks
-                    }
-                };
+            // Defensive counts with deep property checks
+            const sysBots = Array.isArray(usersRes) ? usersRes.filter((u: any) => u.isSystemBot || u.is_system_bot).length : 0;
+            const activeAgents = Array.isArray(agentsRes) ? agentsRes.filter((a: any) => a.isActive !== false && a.isActive !== 0).length : 0;
 
-                // Update Node Data
-                setNodes((nds) => nds.map((node) => {
-                    if (node.id === 'db-1') {
-                        return { ...node, data: newData };
-                    }
-                    if (node.id === 'user-1') {
-                        return { ...node, data: { userCount: statsRes.data.totalUsers } };
-                    }
-                    if (node.id === 'archive-1') {
-                        return { ...node, data: { archiveCount: archivedRes.data?.length || 0 } };
-                    }
-                    if (node.id === 'bot-1') {
-                        return { ...node, data: { ...node.data, botCount: sysBots } };
-                    }
-                    if (node.id === 'squad-ai-1') {
-                        return { ...node, data: { ...node.data, botCount: activeAgents } };
-                    }
-                    return node;
-                }));
-            }
+            setNodes((nds) => nds.map((node) => {
+                const baseNode = { ...node };
+
+                if (node.id === 'db-1' && statsRes) {
+                    return {
+                        ...baseNode,
+                        data: {
+                            ...node.data,
+                            dbSize: statsRes.dbSize,
+                            latency: statsRes.latency,
+                            uptime: statsRes.uptime,
+                            realCounts: statsRes.realCounts || {
+                                tasks: statsRes.totalTasks,
+                                users: statsRes.totalUsers,
+                                activeTasks: statsRes.activeTasks,
+                                completedTasks: statsRes.completedTasks
+                            }
+                        }
+                    } as any;
+                }
+                if (node.id === 'user-1' && statsRes) {
+                    return { ...baseNode, data: { ...node.data, userCount: statsRes.totalUsers } } as any;
+                }
+                if (node.id === 'archive-1') {
+                    return { ...baseNode, data: { ...node.data, archiveCount: Array.isArray(archivedRes) ? archivedRes.length : 0 } } as any;
+                }
+                if (node.id === 'bot-1') {
+                    const status = results[2].status === 'rejected' ? 'Fetch Failed' : `Found ${sysBots} units`;
+                    return { ...baseNode, data: { ...node.data, botCount: sysBots, subtitle: status } } as any;
+                }
+                if (node.id === 'squad-ai-1') {
+                    const totalAgents = Array.isArray(agentsRes) ? agentsRes.length : 0;
+                    const activeCount = Array.isArray(agentsRes) ? agentsRes.filter((a: any) => a.isActive !== false && a.isActive !== 0).length : 0;
+                    const status = results[3].status === 'rejected' ? 'Fetch Failed' : `Active: ${activeCount} / Total: ${totalAgents}`;
+                    return { ...baseNode, data: { ...node.data, botCount: activeCount, subtitle: status } } as any;
+                }
+                return node;
+            }));
         } catch (error) {
-            console.error("Failed to fetch node stats", error);
+            console.error("Critical dashboard fetch error:", error);
         }
     };
 
@@ -372,6 +387,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose, initial
         const interval = setInterval(fetchSystemStats, 5000);
         return () => clearInterval(interval);
     }, []);
+
+    // Esc Key Handler
+    useEffect(() => {
+        const handleEsc = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                if (selectedNode) {
+                    setSelectedNode(null);
+                } else {
+                    onClose();
+                }
+            }
+        };
+        window.addEventListener('keydown', handleEsc);
+        return () => window.removeEventListener('keydown', handleEsc);
+    }, [selectedNode, onClose]);
 
     return (
         <div className="h-full w-full bg-[#050505] text-zinc-100 flex flex-col relative overflow-hidden">

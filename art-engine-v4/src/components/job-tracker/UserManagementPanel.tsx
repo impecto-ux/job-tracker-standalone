@@ -127,6 +127,32 @@ export const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ onClos
         return () => { socket.disconnect(); };
     }, []);
 
+    // Esc Handler
+    useEffect(() => {
+        const handleEsc = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                // Priority: Modals -> Search -> Selection -> Close
+                if (isAddUserOpen) { setIsAddUserOpen(false); return; }
+                if (isEditUserOpen) { setIsEditUserOpen(false); return; }
+                if (isAddDeptOpen) { setIsAddDeptOpen(false); return; }
+                if (isEditDeptOpen) { setIsEditDeptOpen(false); return; }
+                if (isAddTeamOpen) { setIsAddTeamOpen(false); return; }
+                if (isAddGroupOpen) { setIsAddGroupOpen(false); return; }
+                if (isEditGroupOpen) { setIsEditGroupOpen(false); return; }
+                if (isAddToGroupModalOpen) { setIsAddToGroupModalOpen(false); return; }
+                if (isAddToDeptModalOpen) { setIsAddToDeptModalOpen(false); return; }
+
+                if (viewingUser) { setViewingUser(null); return; }
+
+                if (searchQuery) { setSearchQuery(''); return; }
+
+                onClose();
+            }
+        };
+        window.addEventListener('keydown', handleEsc);
+        return () => window.removeEventListener('keydown', handleEsc);
+    }, [isAddUserOpen, isEditUserOpen, isAddDeptOpen, isEditDeptOpen, isAddTeamOpen, isAddGroupOpen, isEditGroupOpen, isAddToGroupModalOpen, isAddToDeptModalOpen, viewingUser, searchQuery, onClose]);
+
     const fetchData = async () => {
         setIsLoading(true);
         try {
@@ -609,7 +635,7 @@ export const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ onClos
                                         <p className="text-sm text-zinc-500 truncate max-w-md">{selectedNode.data.description}</p>
                                     </div>
                                 </div>
-                                {selectedNode.type === 'dept' && (
+                                {auth.user?.role === 'admin' && selectedNode.type === 'dept' && (
                                     <div className="flex items-center gap-2">
                                         <button onClick={() => { setEditingDept(selectedNode.data); setIsEditDeptOpen(true) }} className="p-2 hover:bg-white/10 rounded text-zinc-400 hover:text-white transition-colors"><Edit2 size={18} /></button>
                                         <button onClick={() => handleDeleteDept(selectedNode.data.id)} className="p-2 hover:bg-white/10 rounded text-zinc-400 hover:text-red-400 transition-colors"><Trash2 size={18} /></button>
@@ -682,15 +708,15 @@ export const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ onClos
                                 <button onClick={() => setIsAddToGroupModalOpen(true)} className="flex items-center gap-2 bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors">
                                     <Plus size={14} /> Add Member
                                 </button>
-                            ) : selectedNode.type === 'dept' || selectedNode.type === 'team' ? (
+                            ) : (auth.user?.role === 'admin' || auth.user?.role === 'manager') && (selectedNode.type === 'dept' || selectedNode.type === 'team') ? (
                                 <button onClick={() => setIsAddToDeptModalOpen(true)} className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors">
                                     <Plus size={14} /> Add Member
                                 </button>
-                            ) : selectedNode.type === 'bots_root' ? (
+                            ) : auth.user?.role === 'admin' && selectedNode.type === 'bots_root' ? (
                                 <button onClick={() => setIsAddUserOpen(true)} className="flex items-center gap-2 bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors">
                                     <Plus size={14} /> Add Bot
                                 </button>
-                            ) : (selectedNode.type === 'root') ? (
+                            ) : auth.user?.role === 'admin' && selectedNode.type === 'root' ? (
                                 <button onClick={() => setIsAddUserOpen(true)} className="flex items-center gap-2 bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors">
                                     <Plus size={14} /> Add User
                                 </button>
@@ -718,10 +744,12 @@ export const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ onClos
                                             <div className="text-[10px] text-zinc-600 mt-2 flex items-center gap-1"><Folder size={10} /> Functional units</div>
                                         </div>
                                     </div>
-                                    <button onClick={() => setIsAddDeptOpen(true)} className="flex flex-col items-center justify-center p-6 rounded-xl border border-dashed border-white/10 text-zinc-500 hover:border-emerald-500/50 hover:text-emerald-500 hover:bg-emerald-500/5 transition-all gap-2 group">
-                                        <div className="p-2 rounded-full bg-white/5 group-hover:bg-emerald-500/20"><Plus size={24} /></div>
-                                        <span className="font-bold text-sm">Create Department</span>
-                                    </button>
+                                    {auth.user?.role === 'admin' && (
+                                        <button onClick={() => setIsAddDeptOpen(true)} className="flex flex-col items-center justify-center p-6 rounded-xl border border-dashed border-white/10 text-zinc-500 hover:border-emerald-500/50 hover:text-emerald-500 hover:bg-emerald-500/5 transition-all gap-2 group">
+                                            <div className="p-2 rounded-full bg-white/5 group-hover:bg-emerald-500/20"><Plus size={24} /></div>
+                                            <span className="font-bold text-sm">Create Department</span>
+                                        </button>
+                                    )}
                                     {departments
                                         .filter(d => d.name.toLowerCase().includes(searchQuery.toLowerCase()))
                                         .map(dept => (
@@ -736,10 +764,12 @@ export const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ onClos
                                                             <div className="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">Department</div>
                                                         </div>
                                                     </div>
-                                                    <div className="flex gap-1 relative z-10">
-                                                        <button onClick={(e) => { e.stopPropagation(); setEditingDept(dept); setIsEditDeptOpen(true); }} className="p-1.5 hover:bg-white/10 rounded text-zinc-500 hover:text-white"><Edit2 size={14} /></button>
-                                                        <button onClick={(e) => { e.stopPropagation(); handleDeleteDept(dept.id); }} className="p-1.5 hover:bg-white/10 rounded text-zinc-500 hover:text-red-400"><Trash2 size={14} /></button>
-                                                    </div>
+                                                    {auth.user?.role === 'admin' && (
+                                                        <div className="flex gap-1 relative z-10">
+                                                            <button onClick={(e) => { e.stopPropagation(); setEditingDept(dept); setIsEditDeptOpen(true); }} className="p-1.5 hover:bg-white/10 rounded text-zinc-500 hover:text-white"><Edit2 size={14} /></button>
+                                                            <button onClick={(e) => { e.stopPropagation(); handleDeleteDept(dept.id); }} className="p-1.5 hover:bg-white/10 rounded text-zinc-500 hover:text-red-400"><Trash2 size={14} /></button>
+                                                        </div>
+                                                    )}
                                                 </div>
                                                 <p className="text-xs text-zinc-400 line-clamp-2 flex-1">{dept.description || 'No description provided.'}</p>
                                                 <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-xs text-zinc-500">
@@ -1007,19 +1037,23 @@ export const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ onClos
                                     <ArrowRight size={16} className="rotate-180" />
                                 </button>
                                 <div className="absolute top-4 right-4 flex gap-2">
-                                    <button onClick={() => { setEditingUser(viewingUser); setIsEditUserOpen(true); }} className="p-2 bg-black/20 hover:bg-black/40 rounded-full text-zinc-300 hover:text-white transition-colors backdrop-blur-md"><Edit2 size={16} /></button>
-                                    <button
-                                        onClick={() => {
-                                            if (selectedNode.type === 'group') handleRemoveFromGroup(viewingUser.id);
-                                            else if (selectedNode.type === 'team') handleRemoveFromTeam(viewingUser.id);
-                                            else if (selectedNode.type === 'dept') handleRemoveFromDept(viewingUser.id);
-                                            else handleDeleteUser(viewingUser.id);
-                                            setViewingUser(null);
-                                        }}
-                                        className="p-2 bg-black/20 hover:bg-red-500/20 rounded-full text-zinc-300 hover:text-red-400 transition-colors backdrop-blur-md"
-                                    >
-                                        <Trash2 size={16} />
-                                    </button>
+                                    {auth.user?.role === 'admin' && (
+                                        <>
+                                            <button onClick={() => { setEditingUser(viewingUser); setIsEditUserOpen(true); }} className="p-2 bg-black/20 hover:bg-black/40 rounded-full text-zinc-300 hover:text-white transition-colors backdrop-blur-md"><Edit2 size={16} /></button>
+                                            <button
+                                                onClick={() => {
+                                                    if (selectedNode.type === 'group') handleRemoveFromGroup(viewingUser.id);
+                                                    else if (selectedNode.type === 'team') handleRemoveFromTeam(viewingUser.id);
+                                                    else if (selectedNode.type === 'dept') handleRemoveFromDept(viewingUser.id);
+                                                    else handleDeleteUser(viewingUser.id);
+                                                    setViewingUser(null);
+                                                }}
+                                                className="p-2 bg-black/20 hover:bg-red-500/20 rounded-full text-zinc-300 hover:text-red-400 transition-colors backdrop-blur-md"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </>
+                                    )}
                                 </div>
                             </div>
 

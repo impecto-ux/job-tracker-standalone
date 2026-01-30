@@ -24,6 +24,16 @@ export default function UserProfileModal({ isOpen, onClose, currentUser, onUpdat
         }
     }, [currentUser, isOpen]);
 
+    useEffect(() => {
+        const handleEsc = (e: KeyboardEvent) => {
+            if (e.key === 'Escape' && isOpen) {
+                onClose();
+            }
+        };
+        window.addEventListener('keydown', handleEsc);
+        return () => window.removeEventListener('keydown', handleEsc);
+    }, [isOpen, onClose]);
+
     const handleSave = async () => {
         setIsLoading(true);
         try {
@@ -75,7 +85,7 @@ export default function UserProfileModal({ isOpen, onClose, currentUser, onUpdat
                     <div className="flex items-center gap-2 mb-4">
                         <span className="text-xs font-bold text-zinc-500 uppercase">Role:</span>
                         <span className={`px-2 py-0.5 rounded textxs font-bold uppercase ${currentUser.role === 'admin' ? 'bg-red-500/20 text-red-400' :
-                                currentUser.role === 'manager' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-zinc-800 text-zinc-300'
+                            currentUser.role === 'manager' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-zinc-800 text-zinc-300'
                             }`}>
                             {currentUser.role}
                         </span>

@@ -58,9 +58,13 @@ export default function MyRequestsModal({ isOpen, onClose, isEmbedded = false, o
             await api.patch(`/tasks/${id}`, editData);
             setIsEditing(null);
             loadMyRequests(); // Refresh
-        } catch (error) {
+        } catch (error: any) {
             console.error("Failed to update task", error);
-            alert("Failed to update task.");
+            if (error.response?.status === 403) {
+                alert(error.response?.data?.message || "Bu işlem için yetkiniz yok.");
+            } else {
+                alert("Failed to update task.");
+            }
         }
     };
 

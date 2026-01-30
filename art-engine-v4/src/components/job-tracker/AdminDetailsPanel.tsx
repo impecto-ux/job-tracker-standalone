@@ -21,7 +21,10 @@ export const AdminDetailsPanel: React.FC<AdminDetailsPanelProps> = ({ onClose })
         tasks: 0,
         users: 0,
         activeTasks: 0,
-        completedTasks: 0
+        completedTasks: 0,
+        historyCount: 0,
+        commentCount: 0,
+        messageCount: 0
     });
 
     useEffect(() => {
@@ -44,7 +47,10 @@ export const AdminDetailsPanel: React.FC<AdminDetailsPanelProps> = ({ onClose })
                     tasks: res.data.totalTasks,
                     users: res.data.totalUsers,
                     activeTasks: res.data.activeTasks,
-                    completedTasks: res.data.completedTasks
+                    completedTasks: res.data.completedTasks,
+                    historyCount: res.data.historyCount,
+                    commentCount: res.data.commentCount,
+                    messageCount: res.data.messageCount
                 });
             }
         } catch (error) {
@@ -167,9 +173,9 @@ export const AdminDetailsPanel: React.FC<AdminDetailsPanelProps> = ({ onClose })
                                     <tbody className="divide-y divide-white/5">
                                         <TableRow name="tasks" rows={realCounts.tasks} size="-" status="active" />
                                         <TableRow name="users" rows={realCounts.users} size="-" status="active" />
-                                        <TableRow name="job_history" rows={realCounts.activeTasks + realCounts.completedTasks} size="-" status="active" />
-                                        <TableRow name="chat_messages" rows={12050} size="2.1 GB" status="active" />
-                                        <TableRow name="audit_logs" rows={890} size="145 MB" status="archiving" />
+                                        <TableRow name="job_history" rows={realCounts.historyCount} size="-" status="active" />
+                                        <TableRow name="chat_messages" rows={realCounts.messageCount} size="-" status="active" />
+                                        <TableRow name="audit_logs" rows={realCounts.commentCount} size="-" status="active" />
                                     </tbody>
                                 </table>
                             </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Globe, LogIn, X, Users } from 'lucide-react';
+import { Search, Globe, LogIn, X, Users, Lock, CheckCircle } from 'lucide-react';
 import api from '@/lib/api';
 import { useStore } from '@/lib/store';
 
@@ -15,6 +15,7 @@ interface PublicGroup {
     description: string;
     isMember: boolean; // Added
     memberCount: number; // Added
+    isPrivate?: boolean;
 }
 
 export const GroupDiscoveryModal: React.FC<GroupDiscoveryModalProps> = ({ isOpen, onClose, onJoined }) => {
@@ -119,12 +120,20 @@ export const GroupDiscoveryModal: React.FC<GroupDiscoveryModalProps> = ({ isOpen
                         <div className="grid grid-cols-2 gap-4">
                             {filteredGroups.map(group => (
                                 <div key={group.id} className={`group bg-white/5 hover:bg-white/10 border ${group.isMember ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-white/5 hover:border-emerald-500/30'} rounded-xl p-5 transition-all mb-4 relative`}>
+
+
                                     <div className="flex justify-between items-start mb-3">
                                         <div className="flex flex-col">
                                             <h3 className="font-bold text-lg text-white group-hover:text-emerald-400 transition-colors flex items-center gap-2">
                                                 {group.name}
+                                                {group.isPrivate && (
+                                                    <Lock size={14} className="text-zinc-500" />
+                                                )}
                                                 {group.isMember && (
-                                                    <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-500/30 font-black tracking-widest uppercase">JOINED</span>
+                                                    <div className="flex items-center gap-1 text-[11px] bg-emerald-500 text-black px-2 py-0.5 rounded-full font-bold shadow-lg shadow-emerald-500/20">
+                                                        <CheckCircle size={12} fill="black" className="text-emerald-500" />
+                                                        JOINED
+                                                    </div>
                                                 )}
                                             </h3>
                                         </div>

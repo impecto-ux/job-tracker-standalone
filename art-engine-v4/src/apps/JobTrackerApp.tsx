@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Plus, Filter, MessageSquare, CheckCircle, CheckCircle2, Check, Clock, AlertCircle, ArrowLeft, Send, RefreshCw, Play, AlertOctagon, XCircle, Trash2, User, Sparkles, X, ChevronDown, LogOut, Settings, LayoutGrid, List, MoreHorizontal, Grid3X3, Columns, Layout, Menu, PanelLeftClose, Minimize2, Maximize2, Zap, Shield, Users, Lock } from 'lucide-react';
+import { Search, Plus, Filter, MessageSquare, CheckCircle, CheckCircle2, Check, Clock, AlertCircle, ArrowLeft, Send, RefreshCw, Play, AlertOctagon, XCircle, Trash2, User, Sparkles, X, ChevronDown, LogOut, Settings, LayoutGrid, List, MoreHorizontal, Grid3X3, Columns, Layout, Menu, PanelLeftClose, Minimize2, Maximize2, Zap, Shield, Users, Lock, Activity } from 'lucide-react';
 import { io } from 'socket.io-client';
 import { getSocketUrl } from '@/lib/config';
 import ChatInterface from '@/components/job-tracker/ChatInterface';
@@ -11,10 +11,14 @@ import UserProfileModal from '@/components/auth/UserProfileModal';
 import { UserManagementPanel } from '@/components/job-tracker/UserManagementPanel';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { LiveTicker } from '../components/job-tracker/LiveTicker';
 import { GroupDiscoveryModal } from '@/components/job-tracker/GroupDiscoveryModal';
+import { LiveStatusModal } from '@/components/job-tracker/LiveStatusModal';
 
-interface JobTrackerProps { }
+interface JobTrackerProps {
+    onExit?: () => void;
+}
 
 import api from '@/lib/api';
 import { useStore } from '@/lib/store';
@@ -41,11 +45,13 @@ interface Task {
     score: number;
     category: string;
     metadata?: any;
+    channelId?: number;
 }
 
 
 
-export default function JobTrackerApp() {
+export default function JobTrackerApp({ onExit }: JobTrackerProps) {
+    const router = useRouter();
     const auth = useStore(state => state.auth);
     const chat = useStore(state => state.chat);
     const refreshChannels = useStore(state => state.chat.refreshChannels);
@@ -83,6 +89,8 @@ export default function JobTrackerApp() {
 
     // Quick Action State: { taskId, type: 'ask' | 'reject', content: '' }
     const [quickAction, setQuickAction] = useState<{ taskId: number; type: 'ask' | 'reject', content: string } | null>(null);
+
+    const [isLiveStatusOpen, setIsLiveStatusOpen] = useState(false);
 
     // Mobile State
     const [mobileTab, setMobileTab] = useState<'tasks' | 'chat' | 'stats'>('tasks');
@@ -353,7 +361,14 @@ export default function JobTrackerApp() {
     });
 
     // Extract Unique Departments
-    const departments = Array.from(new Set(tasks.map(t => t.dept || 'General'))).sort();
+    const departments = useMemo(() => {
+        const userChannels = chat.channels.map(c => c.name);
+        const isAdmin = auth.user?.role === 'admin';
+
+        return Array.from(new Set(tasks.map(t => t.dept || 'General')))
+            .filter(dept => isAdmin || userChannels.includes(dept))
+            .sort();
+    }, [tasks, chat.channels, auth.user?.role]);
 
     const getStatusColor = (status: string) => {
         switch (status) {
@@ -481,9 +496,13 @@ export default function JobTrackerApp() {
             // Clear comment
             if (commentBox) commentBox.value = '';
 
-        } catch (error) {
+        } catch (error: any) {
             console.error("Failed to update status", error);
-            // alert("Failed to update status"); // Silent fail preferred in dev
+            if (error.response?.status === 403) {
+                alert(error.response?.data?.message || 'Bu işlem için yetkiniz yok. Sadece yetkili departman kullanıcıları bu task üzerinde çalışabilir.');
+            } else {
+                alert("Görev güncellenemedi. Lütfen tekrar deneyin.");
+            }
         }
     };
 
@@ -492,16 +511,33 @@ export default function JobTrackerApp() {
     const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
     // Close on Escape
+    // Close on Escape - Comprehensive Handler
     useEffect(() => {
         const handleEsc = (e: KeyboardEvent) => {
+            // Priority 0: Admin Dashboard (Let it handle its own close)
+            if (isAdminDashboardOpen) return;
+
             if (e.key === 'Escape') {
-                setSelectedTask(null);
-                setLightboxUrl(null);
+                // Priority 1: Lightbox & Modals
+                if (lightboxUrl) { setLightboxUrl(null); return; }
+                if (isReportModalOpen) { setIsReportModalOpen(false); return; }
+                if (isDiscoveryOpen) { setIsDiscoveryOpen(false); return; }
+                if (isProfileOpen) { setIsProfileOpen(false); return; }
+                if (isUserMenuOpen) { setIsUserMenuOpen(false); return; }
+
+
+                // Priority 2: Detail Views / Selections
+                if (selectedTask) { setSelectedTask(null); return; }
+                if (showMatrix) { setShowMatrix(false); return; }
+                if (activeTab === 'stats') { setActiveTab('tasks'); return; }
+
+                // Priority 3: Clear Filters/Search
+                if (searchQuery) { setSearchQuery(''); return; }
             }
         };
         window.addEventListener('keydown', handleEsc);
         return () => window.removeEventListener('keydown', handleEsc);
-    }, []);
+    }, [isAdminDashboardOpen, lightboxUrl, isReportModalOpen, isDiscoveryOpen, isProfileOpen, isUserMenuOpen, selectedTask, showMatrix, activeTab, searchQuery, onExit]);
 
     // ... existing code ...
 
@@ -845,8 +881,8 @@ export default function JobTrackerApp() {
                                                 onChange={(e) => setFilterDept(e.target.value)}
                                                 className="w-full bg-zinc-900 border border-white/5 rounded-lg pl-9 pr-8 py-1.5 text-xs font-bold text-zinc-300 focus:outline-none focus:ring-1 focus:ring-emerald-500 appearance-none hover:bg-zinc-800 cursor-pointer relative z-0"
                                             >
-                                                <option value="all">ALL DEPARTMENTS</option>
-                                                {departments.map(dept => (
+                                                <option value="all">ALL GROUPS</option>
+                                                {departments.map((dept: string) => (
                                                     <option key={dept} value={dept}>{dept.toUpperCase()}</option>
                                                 ))}
                                             </select>
@@ -990,7 +1026,7 @@ export default function JobTrackerApp() {
                                                                 initial={{ opacity: 0, y: 10, scale: 0.95 }}
                                                                 animate={{ opacity: 1, y: 0, scale: 1 }}
                                                                 exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                                                className="absolute right-0 mt-2 w-48 bg-zinc-900 border border-white/10 rounded-xl shadow-2xl z-[70] overflow-hidden"
+                                                                className="absolute right-0 top-full mt-2 w-48 bg-zinc-900 border border-white/10 rounded-xl shadow-2xl z-[70] overflow-hidden"
                                                             >
                                                                 <div className="px-4 py-3 border-b border-white/5 bg-white/5">
                                                                     <p className="text-xs font-bold text-white truncate">{auth.user.fullName}</p>
@@ -1013,8 +1049,8 @@ export default function JobTrackerApp() {
                                                                         <>
                                                                             <button
                                                                                 onClick={() => {
-                                                                                    setIsAdminDashboardOpen(true);
-                                                                                    setIsChatCollapsed(true); // Auto-collapse chat
+                                                                                    // setIsAdminDashboardOpen(true); // OLD
+                                                                                    router.push('/admin');
                                                                                     setIsUserMenuOpen(false);
                                                                                 }}
                                                                                 className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10 rounded-lg transition-colors"
@@ -1024,7 +1060,8 @@ export default function JobTrackerApp() {
                                                                             </button>
                                                                             <button
                                                                                 onClick={() => {
-                                                                                    setIsUserManagementOpen(true);
+                                                                                    // setIsUserManagementOpen(true); // OLD
+                                                                                    router.push('/admin/users');
                                                                                     setIsUserMenuOpen(false);
                                                                                 }}
                                                                                 className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 rounded-lg transition-colors mt-1"
@@ -1041,8 +1078,7 @@ export default function JobTrackerApp() {
                                                                         onClick={() => {
                                                                             auth.logout();
                                                                             setIsUserMenuOpen(false);
-                                                                            // Reload to clear sensitive state
-                                                                            window.location.reload();
+                                                                            router.push('/login');
                                                                         }}
                                                                         className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors"
                                                                     >
@@ -1101,13 +1137,25 @@ export default function JobTrackerApp() {
                                         )}
 
                                         {/* Daily Report Button */}
-                                        <button
-                                            onClick={handleGenerateReport}
-                                            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 hover:text-indigo-300 transition-colors text-xs font-bold border border-indigo-500/20"
-                                        >
-                                            <Sparkles size={14} />
-                                            DAILY BRIEF
-                                        </button>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={handleGenerateReport}
+                                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 hover:text-indigo-300 transition-colors text-xs font-bold border border-indigo-500/20"
+                                            >
+                                                <Sparkles size={14} />
+                                                DAILY BRIEF
+                                            </button>
+
+                                            {(auth.user?.role === 'admin' || auth.user?.role === 'manager') && (
+                                                <button
+                                                    onClick={() => setIsLiveStatusOpen(true)}
+                                                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 hover:text-emerald-300 transition-colors text-xs font-bold border border-emerald-500/20"
+                                                >
+                                                    <Activity size={14} />
+                                                    LIVE STATUS
+                                                </button>
+                                            )}
+                                        </div>
 
                                         {/* Search, etc. - Minimal for now since we have filters */}
                                         <div className="relative">
@@ -1173,9 +1221,17 @@ export default function JobTrackerApp() {
                                             {Array.from(new Set(tasks.map(t => t.dept || 'General')))
                                                 .map(dept => ({
                                                     dept,
-                                                    count: tasks.filter(t => (t.dept === dept || (dept === 'General' && !t.dept)) && t.status === 'todo').length
+                                                    count: tasks.filter(t => (t.dept === dept || (dept === 'General' && !t.dept)) && t.status === 'todo').length,
+                                                    totalActivity: tasks.filter(t => (t.dept === dept || (dept === 'General' && !t.dept))).length
                                                 }))
-                                                .sort((a, b) => b.count - a.count)
+                                                .filter(item => {
+                                                    // Role-based filtering
+                                                    if (auth.user?.role === 'admin' || auth.user?.role === 'manager') return true;
+                                                    // Regular users only see groups they are members of
+                                                    return chat.channels.some(c => c.name.toLowerCase() === item.dept.toLowerCase());
+                                                })
+                                                .sort((a, b) => b.totalActivity - a.totalActivity)
+                                                .slice(0, (auth.user?.role === 'admin' || auth.user?.role === 'manager') ? 5 : 99)
                                                 .map(({ dept }) => {
                                                     const deptTasks = tasks.filter(t => t.dept === dept || (dept === 'General' && !t.dept));
                                                     const total = deptTasks.length || 1;
@@ -1577,7 +1633,18 @@ export default function JobTrackerApp() {
                                                                                                 if (task.status === 'todo') {
                                                                                                     return (
                                                                                                         <button
-                                                                                                            onClick={() => api.patch(`/tasks/${task.id}`, { status: 'in_progress' }).then(loadTasks)}
+                                                                                                            onClick={async () => {
+                                                                                                                try {
+                                                                                                                    await api.patch(`/tasks/${task.id}`, { status: 'in_progress' });
+                                                                                                                    loadTasks();
+                                                                                                                } catch (error: any) {
+                                                                                                                    if (error.response?.status === 403) {
+                                                                                                                        alert(error.response?.data?.message || 'Bu görevi alabilmek için yetkiniz yok. Sadece ilgili departman kullanıcıları bu task üzerinde çalışabilir.');
+                                                                                                                    } else {
+                                                                                                                        console.error('Task update error:', error);
+                                                                                                                    }
+                                                                                                                }
+                                                                                                            }}
                                                                                                             className="flex-1 h-6 flex items-center justify-center bg-zinc-800 border border-white/5 rounded hover:text-emerald-400 group/btn"
                                                                                                             title="Start Task"
                                                                                                         >
@@ -1619,14 +1686,14 @@ export default function JobTrackerApp() {
                                                                                                     <>
                                                                                                         {/* WORKER ACTIONS */}
                                                                                                         {isWorker && task.status === 'todo' && (
-                                                                                                            <button onClick={() => api.patch(`/tasks/${task.id}`, { status: 'in_progress' }).then(loadTasks)} className="flex-1 h-6 flex items-center justify-center bg-zinc-800 border border-white/5 rounded hover:text-emerald-400 group/btn" title="Start Task"><Play size={10} className="group-hover/btn:fill-emerald-400" /></button>
+                                                                                                            <button onClick={async () => { try { await api.patch(`/tasks/${task.id}`, { status: 'in_progress' }); loadTasks(); } catch (error: any) { if (error.response?.status === 403) { alert(error.response?.data?.message || 'Bu görevi alabilmek için yetkiniz yok.'); } else { console.error('Task update error:', error); } } }} className="flex-1 h-6 flex items-center justify-center bg-zinc-800 border border-white/5 rounded hover:text-emerald-400 group/btn" title="Start Task"><Play size={10} className="group-hover/btn:fill-emerald-400" /></button>
                                                                                                         )}
 
                                                                                                         {isWorker && task.status === 'in_progress' && (
                                                                                                             isAssignedToOther ? (
                                                                                                                 <div className="flex-1 h-6 flex items-center justify-center bg-zinc-800/50 border border-white/5 rounded text-zinc-600 cursor-not-allowed" title={`Locked: Assigned to ${task.owner}`}><Lock size={10} /></div>
                                                                                                             ) : (
-                                                                                                                <button onClick={() => api.patch(`/tasks/${task.id}`, { status: 'done' }).then(loadTasks)} className="flex-1 h-6 flex items-center justify-center bg-zinc-800 border border-white/5 rounded hover:text-emerald-400 text-emerald-500/50" title="Complete Task"><CheckCircle2 size={12} /></button>
+                                                                                                                <button onClick={async () => { try { await api.patch(`/tasks/${task.id}`, { status: 'done' }); loadTasks(); } catch (error: any) { if (error.response?.status === 403) { alert(error.response?.data?.message || 'Bu görevi tamamlayabilmek için yetkiniz yok.'); } else { console.error('Task update error:', error); } } }} className="flex-1 h-6 flex items-center justify-center bg-zinc-800 border border-white/5 rounded hover:text-emerald-400 text-emerald-500/50" title="Complete Task"><CheckCircle2 size={12} /></button>
                                                                                                             )
                                                                                                         )}
 
@@ -2157,6 +2224,12 @@ export default function JobTrackerApp() {
 
                             {/* LIVE TICKER (Global) */}
                             <LiveTicker tasks={tasks} />
+
+                            <LiveStatusModal
+                                isOpen={isLiveStatusOpen}
+                                onClose={() => setIsLiveStatusOpen(false)}
+                                tasks={tasks}
+                            />
 
                             {/* BOTTOM NAVIGATION (Mobile Only) */}
                             <div className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-zinc-950/90 backdrop-blur-md border-t border-white/10 shrink-0 flex items-center justify-around px-2 z-[60] pb-2">

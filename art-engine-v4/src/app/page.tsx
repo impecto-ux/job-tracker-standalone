@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import Dashboard from '@/components/dashboard/Dashboard';
 import CreativeStudio from '@/apps/CreativeStudio';
@@ -14,6 +14,14 @@ type AppId = 'dashboard' | 'studio' | 'onyx' | 'hashtracker' | 'poster' | 'jobtr
 
 export default function Home() {
   const [activeApp, setActiveApp] = useState<AppId>('dashboard');
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const appParam = params.get('app');
+    if (appParam && ['studio', 'onyx', 'hashtracker', 'poster', 'jobtracker'].includes(appParam)) {
+      setActiveApp(appParam as AppId);
+    }
+  }, []);
 
   return (
     <main className="h-screen w-screen bg-black overflow-hidden font-sans">
@@ -103,7 +111,7 @@ export default function Home() {
             transition={{ duration: 0.2 }}
             className="h-full w-full fixed inset-0 z-50 bg-black"
           >
-            <JobTrackerApp />
+            <JobTrackerApp onExit={() => setActiveApp('dashboard')} />
             {/* Temporary Back Button until JobTracker has integrated navigation */}
             <button
               onClick={() => setActiveApp('dashboard')}

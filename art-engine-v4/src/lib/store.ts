@@ -27,6 +27,7 @@ export interface Channel {
     name: string;
     type: string;
     targetDepartment?: { id: number; name: string };
+    users?: { id: number; fullName?: string }[];
 }
 
 export interface ChatMessage {
@@ -139,10 +140,12 @@ export const useStore = create<AppState>()(
                 user: null,
                 token: null,
                 login: (token, user) => set((state) => ({
-                    auth: { ...state.auth, token, user }
+                    auth: { ...state.auth, token, user },
+                    chat: { ...state.chat, activeChannelId: null }
                 })),
                 logout: () => set((state) => ({
-                    auth: { ...state.auth, token: null, user: null }
+                    auth: { ...state.auth, token: null, user: null },
+                    chat: { ...state.chat, activeChannelId: null }
                 })),
                 setUser: (user) => set((state) => ({
                     auth: { ...state.auth, user }
