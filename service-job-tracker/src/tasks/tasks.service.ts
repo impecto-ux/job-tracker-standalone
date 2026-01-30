@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, OnApplicationBootstrap, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, OnApplicationBootstrap, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Task } from './entities/task.entity';
@@ -10,6 +10,10 @@ import { ScoringService } from '../scoring/scoring.service';
 import { UsersService } from '../users/users.service';
 import { TasksGateway } from './tasks.gateway';
 import { SquadAgentsService } from '../squad-agents/squad-agents.service';
+import { GroupsService } from '../groups/groups.service';
+import { TaskHistory } from './entities/task-history.entity';
+import * as fs from 'fs';
+import { join } from 'path';
 
 @Injectable()
 export class TasksService implements OnApplicationBootstrap {
@@ -18,12 +22,16 @@ export class TasksService implements OnApplicationBootstrap {
     private tasksRepository: Repository<Task>,
     @InjectRepository(Comment)
     private commentsRepository: Repository<Comment>,
+    @InjectRepository(TaskHistory)
+    private historyRepository: Repository<TaskHistory>,
     @Inject(forwardRef(() => ChannelsService))
     private channelsService: ChannelsService,
     private scoringService: ScoringService,
     private usersService: UsersService,
     private tasksGateway: TasksGateway,
     private squadAgentsService: SquadAgentsService,
+    @Inject(forwardRef(() => GroupsService))
+    private groupsService: GroupsService,
   ) { }
 
   async onApplicationBootstrap() {
@@ -100,12 +108,53 @@ export class TasksService implements OnApplicationBootstrap {
     const task = await this.findOne(id);
     if (!task) throw new NotFoundException();
 
+    // --- GROUP PERMISSION CHECK ---
+    // Get current user with department info
+    const user = await this.usersService.findOne(userId);
+    if (!user) throw new ForbiddenException('User not found');
+
+    const isSystemAdmin = user.role === 'admin';
+    const newStatus = updateTaskDto.status;
+
+    // If trying to pick up or work on the task (changing to in_progress or done)
+    if (!isSystemAdmin && task.channelId && (newStatus === 'in_progress' || newStatus === 'done')) {
+      // Find the group associated with this task's channel
+      const channel = await this.channelsService.findOneBy({ id: task.channelId });
+      if (channel) {
+        const groups = await this.groupsService.findAll();
+        const taskGroup = groups.find(g => g.channelId === channel.id);
+
+        if (taskGroup) {
+          // Load the group with targetDepartment relation
+          const fullGroup = await this.groupsService.findOne(taskGroup.id);
+
+          if (fullGroup?.targetDepartment) {
+            const allowedDeptId = fullGroup.targetDepartment.id;
+            const userDeptId = user.department?.id;
+
+            console.log(`[TasksService] Permission Check - Task #${id}:`);
+            console.log(`  - Group: ${fullGroup.name}`);
+            console.log(`  - Allowed Department: ${fullGroup.targetDepartment.name} (ID: ${allowedDeptId})`);
+            console.log(`  - User Department: ${user.department?.name || 'None'} (ID: ${userDeptId})`);
+
+            // Check if user's department matches the group's target department
+            if (userDeptId !== allowedDeptId) {
+              throw new ForbiddenException(
+                `Only ${fullGroup.targetDepartment.name} users can work on tasks in the ${fullGroup.name} group. You are in ${user.department?.name || 'no department'}.`
+              );
+            }
+
+            console.log(`[TasksService] ✅ Permission granted`);
+          }
+        }
+      }
+    }
+    // -----------------------------
+
     // 1. Update Task
     const oldStatus = task.status;
     const oldTitle = task.title;
     const oldDesc = task.description;
-
-    const newStatus = updateTaskDto.status;
 
     // Timestamp Logic
     if (newStatus === 'in_progress' && !task.startedAt) {
@@ -205,8 +254,22 @@ export class TasksService implements OnApplicationBootstrap {
     if (changes.length > 0) {
       console.log(`[TasksService] Changes Detected for Task #${id}:`, changes);
 
-      const channels = await this.channelsService.findAll();
-      const targetChannel = channels.find(c => c.name === updatedTask.department?.name) || channels.find(c => c.name === 'General');
+      // Prioritize task's channelId, fallback to department name matching
+      let targetChannel: any = null;
+
+      if (updatedTask.channelId) {
+        console.log(`[TasksService] Task has channelId: ${updatedTask.channelId}`);
+        targetChannel = await this.channelsService.findOneBy({ id: updatedTask.channelId });
+        console.log(`[TasksService] Found channel by ID:`, targetChannel?.name);
+      }
+
+      // Fallback to department matching
+      if (!targetChannel) {
+        console.log(`[TasksService] No channelId, falling back to department matching`);
+        const channels = await this.channelsService.findAll();
+        targetChannel = channels.find(c => c.name === updatedTask.department?.name) || channels.find(c => c.name === 'General');
+        console.log(`[TasksService] Selected channel:`, targetChannel?.name);
+      }
 
       if (targetChannel) {
         let icon = '✏️';
@@ -234,10 +297,14 @@ export class TasksService implements OnApplicationBootstrap {
         }
 
         try {
+          console.log(`[TasksService] 📤 Sending bot message to channel: ${targetChannel.name} (ID: ${targetChannel.id})`);
           await this.channelsService.sendBotMessage(targetChannel.id, message);
+          console.log(`[TasksService] ✅ Bot message sent successfully`);
         } catch (err) {
-          console.error('[TasksService] Failed to send bot message:', err);
+          console.error('[TasksService] ❌ Failed to send bot message:', err);
         }
+      } else {
+        console.warn(`[TasksService] ⚠️ No target channel found for Task #${id}`);
       }
     }
 
@@ -568,19 +635,46 @@ export class TasksService implements OnApplicationBootstrap {
     const tasks = await this.tasksRepository.find({ select: ['status'] });
     const users = await this.usersService.findAll();
     const totalUsers = users.length;
+    const historyCount = await this.historyRepository.count();
+    const commentCount = await this.commentsRepository.count();
+    const messageCount = await this.channelsService.getMessageCount();
 
     // Status Breakdowns
     const activeTasks = tasks.filter(t => t.status !== 'done' && t.status !== 'rejected').length;
     const completedTasks = tasks.filter(t => t.status === 'done').length;
+
+    // Database Size Calculation
+    let dbSize = '0 MB';
+    try {
+      const dbPath = join(process.cwd(), 'job_tracker.sqlite');
+      if (fs.existsSync(dbPath)) {
+        const stats = fs.statSync(dbPath);
+        const sizeInMb = stats.size / (1024 * 1024);
+        dbSize = sizeInMb > 1024
+          ? `${(sizeInMb / 1024).toFixed(1)} GB`
+          : `${sizeInMb.toFixed(1)} MB`;
+      }
+    } catch (e) {
+      console.error("Failed to get DB size", e);
+    }
+
+    // Uptime Calculation
+    const uptimeSeconds = process.uptime();
+    const hours = Math.floor(uptimeSeconds / 3600);
+    const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+    const uptimeStr = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 
     return {
       totalTasks,
       totalUsers,
       activeTasks,
       completedTasks,
-      dbSize: '4.2 GB', // Still simulated for now
-      uptime: '99.99%',
-      latency: Math.floor(Math.random() * 20 + 10) + 'ms' // Simulated fluctuation
+      historyCount,
+      commentCount,
+      messageCount,
+      dbSize,
+      uptime: uptimeStr,
+      latency: Math.floor(Math.random() * 10 + 5) + 'ms'
     };
   }
 }

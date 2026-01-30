@@ -7,6 +7,7 @@ import { AiModule } from '../ai/ai.module';
 import { ChannelsModule } from '../channels/channels.module';
 import { UsersModule } from '../users/users.module';
 import { TasksModule } from '../tasks/tasks.module';
+import { GroupsModule } from '../groups/groups.module';
 
 @Module({
     imports: [
@@ -15,6 +16,7 @@ import { TasksModule } from '../tasks/tasks.module';
         forwardRef(() => ChannelsModule),
         UsersModule,
         forwardRef(() => TasksModule),
+        forwardRef(() => GroupsModule),
     ],
     providers: [SquadAgentsService],
     controllers: [SquadAgentsController],

@@ -35,4 +35,8 @@ export class CreateTaskDto {
 
     @IsOptional()
     metadata?: any;
+
+    @IsNumber()
+    @IsOptional()
+    channelId?: number;
 }

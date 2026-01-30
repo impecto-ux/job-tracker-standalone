@@ -1,5 +1,6 @@
 export class CreateSquadAgentDto {
-    groupId: number;
+    groupId?: number; // Legacy
+    channelId: number; // Primary
     name: string;
     personality?: string;
     systemPrompt?: string;

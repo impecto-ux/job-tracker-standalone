@@ -6,5 +6,6 @@ export class CreateTickerDto {
     customMessage?: string;
     allowedRoles?: string[];
     isActive?: boolean;
+    duration?: number;
     order?: number;
 }

@@ -23,6 +23,7 @@ export class UsersController {
         return this.usersService.findAll();
     }
 
+    @UseGuards(JwtAuthGuard)
     @Patch(':id')
     @UseInterceptors(FileInterceptor('file', {
         storage: diskStorage({
@@ -39,7 +40,12 @@ export class UsersController {
             },
         }),
     }))
-    update(@Param('id') id: string, @Body() body: any, @UploadedFile() file: Express.Multer.File) {
+    update(@Param('id') id: string, @Body() body: any, @UploadedFile() file: Express.Multer.File, @Request() req) {
+        // Only Admin can edit users
+        if (req.user.role !== UserRole.ADMIN) {
+            throw new ForbiddenException('Only admins can modify user profiles');
+        }
+
         if (file) {
             body.avatarUrl = `/uploads/avatars/${file.filename}`;
         }
@@ -63,14 +69,21 @@ export class UsersController {
 
     @UseGuards(JwtAuthGuard)
     @Patch(':id/department')
-    async updateDepartment(@Param('id') id: string, @Body() body: { departmentId: number }) {
+    async updateDepartment(@Param('id') id: string, @Body() body: { departmentId: number }, @Request() req) {
+        if (req.user.role !== UserRole.ADMIN) {
+            throw new ForbiddenException('Only admins can change user departments');
+        }
         // Assuming we will need this
         // For now using update
         return this.usersService.update(+id, { department: { id: body.departmentId } } as any);
     }
 
+    @UseGuards(JwtAuthGuard)
     @Delete(':id')
-    remove(@Param('id') id: string) {
+    remove(@Param('id') id: string, @Request() req) {
+        if (req.user.role !== UserRole.ADMIN) {
+            throw new ForbiddenException('Only admins can delete users');
+        }
         return this.usersService.remove(+id);
     }
 }

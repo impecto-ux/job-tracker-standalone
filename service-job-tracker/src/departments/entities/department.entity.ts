@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, OneToMany } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, OneToMany, ManyToOne } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 
 @Entity('departments')
@@ -14,6 +14,12 @@ export class Department {
 
     @OneToMany(() => User, (user) => user.department)
     users: User[];
+
+    @ManyToOne(() => Department, (dept) => dept.children, { nullable: true })
+    parent: Department;
+
+    @OneToMany(() => Department, (dept) => dept.parent)
+    children: Department[];
 
     @OneToMany('Team', (team: any) => team.department)
     teams: any[];

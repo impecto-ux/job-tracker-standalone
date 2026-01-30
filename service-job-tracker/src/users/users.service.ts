@@ -73,8 +73,14 @@ export class UsersService implements OnModuleInit {
         }
     }
 
-    async create(userData: Partial<User>): Promise<User> {
-        const user = this.usersRepository.create(userData);
+    async create(userData: any): Promise<User> {
+        const { departmentId, ...cleanData } = userData;
+        const user = this.usersRepository.create(cleanData as Partial<User>);
+
+        if (departmentId) {
+            user.department = { id: Number(departmentId) } as any;
+        }
+
         const res = await this.usersRepository.save(user);
         this.usersGateway.notifyUserUpdated();
         return res;
@@ -92,18 +98,27 @@ export class UsersService implements OnModuleInit {
         return this.usersRepository.findOne({ where: { id }, relations: ['department', 'groups'] });
     }
 
-    async update(id: number, attrs: Partial<User>) {
+    async update(id: number, attrs: any) {
         const user = await this.findOne(id);
         if (!user) {
             throw new Error('User not found');
         }
 
+        const { departmentId, ...cleanAttrs } = attrs;
+
         // Securely hash password if provided
-        if (attrs.passwordHash) {
-            attrs.passwordHash = await bcrypt.hash(attrs.passwordHash, 10);
+        if (cleanAttrs.passwordHash) {
+            cleanAttrs.passwordHash = await bcrypt.hash(cleanAttrs.passwordHash, 10);
         }
 
-        Object.assign(user, attrs);
+        Object.assign(user, cleanAttrs);
+
+        if (departmentId) {
+            user.department = { id: Number(departmentId) } as any;
+        } else if (departmentId === null) {
+            user.department = null as any;
+        }
+
         const res = await this.usersRepository.save(user);
         this.usersGateway.notifyUserUpdated();
         return res;

@@ -38,7 +38,7 @@ export class DepartmentsService implements OnModuleInit {
     }
 
     async findAll(): Promise<Department[]> {
-        return this.departmentsRepository.find({ relations: ['users'] });
+        return this.departmentsRepository.find({ relations: ['users', 'parent', 'children'] });
     }
 
     async findOne(id: number): Promise<Department | null> {
@@ -50,15 +50,51 @@ export class DepartmentsService implements OnModuleInit {
         return this.departmentsRepository.save(dept);
     }
 
-    async update(id: number, data: Partial<Department>): Promise<Department> {
-        await this.departmentsRepository.update(id, data);
-        const updated = await this.findOne(id);
-        if (!updated) throw new Error('Department not found');
-        return updated;
+    async update(id: number, data: any): Promise<Department> {
+        const dept = await this.findOne(id);
+        if (!dept) throw new Error('Department not found');
+
+        const { parentId, ...cleanData } = data;
+
+        if (parentId !== undefined) {
+            dept.parent = parentId ? ({ id: Number(parentId) } as any) : null;
+        }
+
+        Object.assign(dept, cleanData);
+        return this.departmentsRepository.save(dept);
     }
 
     async remove(id: number): Promise<void> {
         await this.departmentsRepository.delete(id);
+    }
+
+    async isAncestor(ancestorId: number, descendantId: number): Promise<boolean> {
+        if (ancestorId === descendantId) return true;
+
+        const descendant = await this.departmentsRepository.findOne({
+            where: { id: descendantId },
+            relations: ['parent']
+        });
+
+        if (!descendant || !descendant.parent) return false;
+
+        return this.isAncestor(ancestorId, descendant.parent.id);
+    }
+
+    async getAllDescendants(id: number): Promise<number[]> {
+        const dept = await this.departmentsRepository.findOne({
+            where: { id },
+            relations: ['children']
+        });
+        if (!dept) return [];
+
+        let ids = [id];
+        if (dept.children && dept.children.length > 0) {
+            for (const child of dept.children) {
+                ids = ids.concat(await this.getAllDescendants(child.id));
+            }
+        }
+        return ids;
     }
 
     async assignUsers(departmentId: number, userIds: number[]): Promise<void> {

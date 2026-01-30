@@ -48,6 +48,10 @@ export class Task {
     @Column({ name: 'due_date', nullable: true })
     dueDate: Date;
 
+    @Index()
+    @Column({ name: 'channel_id', nullable: true })
+    channelId: number;
+
     @Column({ name: 'image_url', nullable: true })
     imageUrl: string;
 

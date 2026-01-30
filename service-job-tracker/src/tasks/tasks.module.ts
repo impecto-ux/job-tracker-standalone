@@ -13,11 +13,12 @@ import { SquadAgentsModule } from '../squad-agents/squad-agents.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Task, Comment]),
+    TypeOrmModule.forFeature([Task, Comment, TaskHistory]),
     forwardRef(() => ChannelsModule),
     ScoringModule,
     UsersModule,
     forwardRef(() => SquadAgentsModule),
+    forwardRef(() => require('../groups/groups.module').GroupsModule),
   ],
   controllers: [TasksController],
   providers: [TasksService, TasksGateway],

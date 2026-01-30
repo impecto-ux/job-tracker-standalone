@@ -8,6 +8,7 @@ import { Task } from '../tasks/entities/task.entity';
 import { CreateSquadAgentDto } from './dto/squad-agent.dto';
 
 import { UsersService } from '../users/users.service';
+import { GroupsService } from '../groups/groups.service';
 import { OnModuleInit } from '@nestjs/common';
 
 @Injectable()
@@ -19,6 +20,8 @@ export class SquadAgentsService implements OnModuleInit {
         @Inject(forwardRef(() => ChannelsService))
         private channelsService: ChannelsService,
         private usersService: UsersService,
+        @Inject(forwardRef(() => GroupsService))
+        private groupsService: GroupsService,
     ) { }
 
     async onModuleInit() {
@@ -29,8 +32,8 @@ export class SquadAgentsService implements OnModuleInit {
         }
     }
 
-    async findOneByGroupId(groupId: number): Promise<SquadAgent | null> {
-        return this.squadAgentRepo.findOneBy({ groupId });
+    async findOneByChannelId(channelId: number): Promise<SquadAgent | null> {
+        return this.squadAgentRepo.findOneBy({ channelId });
     }
 
     async findAll(): Promise<SquadAgent[]> {
@@ -39,7 +42,7 @@ export class SquadAgentsService implements OnModuleInit {
 
     async createOrUpdate(data: CreateSquadAgentDto): Promise<SquadAgent> {
         let agent: SquadAgent;
-        const existing = await this.squadAgentRepo.findOneBy({ groupId: data.groupId });
+        const existing = await this.squadAgentRepo.findOneBy({ channelId: data.channelId });
         if (existing) {
             Object.assign(existing, data);
             agent = await this.squadAgentRepo.save(existing);
@@ -60,19 +63,19 @@ export class SquadAgentsService implements OnModuleInit {
 
     private async syncAgentToUser(agent: SquadAgent) {
         // Find existing bot user by email or name
-        const botEmail = `bot-${agent.groupId}@squad.ai`;
+        const botEmail = `bot-channel-${agent.channelId}@squad.ai`;
         const allUsers = await this.usersService.findAll();
-        let botUser = allUsers.find(u => u.email === botEmail || u.fullName === agent.name);
+        let botUser = allUsers.find(u => u.email === botEmail || (u.fullName === agent.name && u.role === 'bot'));
 
         const userData = {
             email: botEmail,
             fullName: agent.name,
-            username: agent.name.replace('@', '').toLowerCase(),
+            username: agent.name.replace('@', '').toLowerCase().replace(/\s+/g, '_'),
             isActive: agent.isActive,
             isSystemBot: true,
             role: 'bot',
             passwordHash: 'system-bot-no-login',
-            departmentId: agent.groupId,
+            departmentId: agent.groupId, // Still used for organizational tracking if set
         };
 
         if (botUser) {
@@ -80,18 +83,38 @@ export class SquadAgentsService implements OnModuleInit {
             await this.usersService.update(botUser.id, userData);
         } else {
             // Create
-            await this.usersService.create(userData);
+            botUser = await this.usersService.create(userData);
+        }
+
+        // Ensure bot is a member of the group/channel
+        if (agent.channelId) {
+            // Check if it's a group
+            const groups = await this.groupsService.findAll();
+            const group = groups.find(g => g.channelId === agent.channelId);
+            if (group) {
+                await this.groupsService.addUsersToGroup(group.id, [botUser.id]).catch(e => {
+                    // Ignore "already in group" errors
+                    if (!e.message?.includes('already')) console.error(`Failed to add bot to group ${group.id}`, e);
+                });
+            } else {
+                // It's a department or other channel type
+                await this.channelsService.addMember(agent.channelId, botUser.id).catch(e => console.error(`Failed to add bot to channel ${agent.channelId}`, e));
+            }
         }
     }
 
     async handleTaskEvent(event: string, task: Task) {
-        // Find agent for the task's department (group)
-        // If departmentId is null, check default behavior (maybe no agent)
-        if (!task.departmentId) return;
+        // 1. Prioritize finding agent by specific Channel ID
+        let agent: SquadAgent | null = null;
 
-        const agent: SquadAgent | null = await this.squadAgentRepo.findOne({
-            where: { groupId: task.departmentId, isActive: true }
-        });
+        if (task.channelId) {
+            agent = await this.squadAgentRepo.findOneBy({ channelId: task.channelId, isActive: true });
+        }
+
+        // 2. Fallback to Legacy Group/Dept matching
+        if (!agent && task.departmentId) {
+            agent = await this.squadAgentRepo.findOneBy({ groupId: task.departmentId, isActive: true });
+        }
 
         if (!agent) return;
 
@@ -116,16 +139,38 @@ export class SquadAgentsService implements OnModuleInit {
             const comment = await this.aiService.generateProactiveResponse(agent, task, event);
 
             if (comment && comment.length > 5) {
-                // Find target channel
-                const channels = await this.channelsService.findAll();
-                const targetChannel = channels.find(c => c.name === task.department?.name) || channels.find(c => c.name === 'General');
+                // Find target channel (Use task.channelId if present!)
+                const targetChannelId = task.channelId || (await (async () => {
+                    const channels = await this.channelsService.findAll();
+                    return channels.find(c => c.name === task.department?.name)?.id || channels.find(c => c.name === 'General')?.id;
+                })());
 
-                if (targetChannel) {
-                    await this.channelsService.sendBotMessage(targetChannel.id, comment, agent.name);
+                if (targetChannelId) {
+                    await this.channelsService.sendBotMessage(targetChannelId, comment, agent.name);
                 }
             }
         } catch (error) {
             console.error('[SquadAgentsService] Proactive logic failed:', error);
+        }
+    }
+
+    async disableAll(): Promise<void> {
+        try {
+            console.log('[SquadAgentsService] Executing bulk disable...');
+            await this.squadAgentRepo
+                .createQueryBuilder()
+                .update(SquadAgent)
+                .set({ isActive: false })
+                .execute();
+
+            const agents = await this.findAll();
+            console.log(`[SquadAgentsService] Updating sync for ${agents.length} agents...`);
+            for (const agent of agents) {
+                await this.syncAgentToUser(agent).catch(e => console.error(`Failed to sync agent ${agent.name}`, e));
+            }
+        } catch (error) {
+            console.error('[SquadAgentsService] Bulk disable logic failed:', error);
+            throw error;
         }
     }
 }

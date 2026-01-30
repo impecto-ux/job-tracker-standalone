@@ -5,8 +5,11 @@ export class SquadAgent {
     @PrimaryGeneratedColumn()
     id: number;
 
-    @Column({ unique: true })
-    groupId: number; // Link to Group ID (Departments are groups too)
+    @Column({ unique: true, nullable: true })
+    channelId: number; // Primary Anchor: Every squad (Group/Dept) has a unique Channel ID
+
+    @Column({ nullable: true })
+    groupId: number; // Legacy/Reference: Department ID or Group ID
 
     @Column()
     name: string; // e.g., "@DevBot", "DesignOracle"

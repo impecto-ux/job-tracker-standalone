@@ -42,7 +42,7 @@ export class AuthService {
         return null;
     }
 
-    async register(userData: { email: string, password: string, fullName: string, whatsappNumber?: string, username?: string, avatarUrl?: string, role?: string }) {
+    async register(userData: { email: string, password: string, fullName: string, whatsappNumber?: string, username?: string, avatarUrl?: string, role?: string, departmentId?: string | number }) {
         const emailLower = userData.email.toLowerCase();
         const existingByEmail = await this.usersService.findByEmail(emailLower);
         if (existingByEmail) {
@@ -77,8 +77,9 @@ export class AuthService {
                 fullName: userData.fullName,
                 whatsappNumber: userData.whatsappNumber?.trim() || undefined,
                 role: userData.role || 'contributor',
-                avatarUrl: userData.avatarUrl
-            });
+                avatarUrl: userData.avatarUrl,
+                departmentId: userData.departmentId
+            } as any);
 
             return this.login(user);
         } catch (err: any) {

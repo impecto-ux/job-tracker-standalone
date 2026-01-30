@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Request, UseGuards, Patch, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Request, UseGuards, Patch, Delete, Query } from '@nestjs/common';
 import { ChannelsService } from './channels.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
@@ -8,8 +8,9 @@ export class ChannelsController {
     constructor(private readonly channelsService: ChannelsService) { }
 
     @Get()
-    findAll() {
-        return this.channelsService.findAll();
+    findAll(@Request() req, @Query('all') all: string) {
+        const userId = req.user?.userId || req.user?.id;
+        return this.channelsService.findAll(userId ? Number(userId) : undefined, req.user?.role, all === 'true');
     }
 
     @Post()
@@ -28,8 +29,8 @@ export class ChannelsController {
     }
 
     @Get(':id/messages')
-    getMessages(@Param('id') id: string) {
-        return this.channelsService.getMessages(+id);
+    getMessages(@Param('id') id: string, @Query('limit') limit?: number) {
+        return this.channelsService.getMessages(+id, limit ? Number(limit) : undefined);
     }
 
     @Post(':id/messages')

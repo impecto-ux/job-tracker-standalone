@@ -54,8 +54,8 @@ export class User {
     @JoinColumn({ name: 'department_id' })
     department: Department;
 
-    @ManyToMany('Group', (group: any) => group.users)
-    groups: any[];
+    @ManyToMany(() => Group, (group) => group.users)
+    groups: Group[];
 
     @ManyToMany('Team', (team: any) => team.users)
     teams: any[];

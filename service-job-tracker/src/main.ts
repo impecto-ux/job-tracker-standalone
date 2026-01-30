@@ -10,6 +10,8 @@ async function bootstrap() {
     credentials: true,
   });
   await app.listen(process.env.PORT ?? 3001, '0.0.0.0');
+  require('fs').writeFileSync('boot.log', `Booted at ${new Date().toISOString()}`);
+  console.log(`Application is running on: ${await app.getUrl()}`); // Force restart trigger
 }
 
 // Global Error Handlers to prevent crash

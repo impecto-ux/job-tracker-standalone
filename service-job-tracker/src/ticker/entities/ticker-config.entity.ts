@@ -24,6 +24,9 @@ export class TickerConfig {
     @Column({ default: true })
     isActive: boolean;
 
+    @Column({ default: 3 })
+    duration: number; // Duration in seconds
+
     @Column({ default: 0 })
     order: number;
 

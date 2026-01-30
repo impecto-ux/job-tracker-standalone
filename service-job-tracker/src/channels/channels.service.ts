@@ -1,6 +1,6 @@
 import { Injectable, Inject, forwardRef, OnApplicationBootstrap } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Brackets } from 'typeorm';
 import { Channel } from './entities/channel.entity';
 import { Message } from './entities/message.entity';
 import { AiService } from '../ai/ai.service';
@@ -90,12 +90,46 @@ export class ChannelsService implements OnApplicationBootstrap {
         this.chatGateway.broadcastChannelCreated(channel);
     }
 
+    async getMessageCount() {
+        return this.messagesRepository.count();
+    }
+
     async findOneBy(where: any) {
         return this.channelsRepository.findOneBy(where);
     }
 
-    async findAll() {
-        return this.channelsRepository.find({ relations: ['users'] });
+    async findAll(userId?: number, userRole?: string, showAll: boolean = false) {
+        console.log(`[ChannelsService] findAll(userId: ${userId}, role: ${userRole}, showAll: ${showAll})`);
+
+        // Start QueryBuilder
+        const query = this.channelsRepository.createQueryBuilder('channel')
+            .leftJoinAndSelect('channel.users', 'users')
+            .leftJoinAndSelect('channel.targetDepartment', 'targetDepartment')
+            // Join with groups table using raw table name and snake_case columns
+            .leftJoin('groups', 'g', 'g.channel_id = channel.id');
+
+        if (userId) {
+            // Logic:
+            // 1. User is a member of the channel (checked via join table)
+            // 2. OR (Admin Only) showAll is true AND group is NOT private
+            query.andWhere(new Brackets(qb => {
+                qb.where('users.id = :userId', { userId });
+
+                if (showAll && userRole === 'admin') {
+                    // Include ALL groups (Public & Private) for Admins when showAll is true
+                    // Note: This overrides the membership filter for admins
+                    qb.orWhere('channel.type = :typeGroup', { typeGroup: 'group' });
+                }
+            }));
+        } else {
+            // If no user context (shouldn't happen with Guard), return empty
+            query.andWhere('1 = 0');
+        }
+
+        console.log(`[ChannelsService] Executing query...`);
+        const results = await query.getMany();
+        console.log(`[ChannelsService] Found ${results.length} channels.`);
+        return results;
     }
 
     async findByName(name: string) {
@@ -124,21 +158,42 @@ export class ChannelsService implements OnApplicationBootstrap {
         }
     }
 
-    async getMessages(channelId: number) {
-        return this.messagesRepository.find({
+    async getMessages(channelId: number, limit: number = 200) {
+        const messages = await this.messagesRepository.find({
             where: { channel: { id: channelId } },
-            order: { createdAt: 'ASC' },
+            order: { createdAt: 'DESC' },
             relations: ['sender', 'replyTo', 'replyTo.sender'],
+            take: limit,
         });
+
+        // Re-sort to ASC to maintain chronological order in UI
+        return messages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
     }
 
     async postMessage(channelId: number, content: string, userId: number, mediaUrl?: string, mediaType?: string, replyToId?: number, thumbnailUrl?: string): Promise<Message> {
         console.log(`[ChannelsService] postMessage: "${content}" @ Channel ${channelId}`);
-        const channel = await this.channelsRepository.findOneBy({ id: channelId });
+        const channel = await this.channelsRepository.findOne({
+            where: { id: channelId },
+            relations: ['users']
+        });
         if (!channel) throw new Error('Channel not found');
 
         const user = await this.usersService.findOne(userId);
         if (!user) throw new Error('User not found');
+
+        // SECURITY CHECK: Ensure user is a member of the channel
+        // Allow if it's NOT a group/private channel (e.g. public department) OR if the user is in the list
+        const isPrivate = ['group', 'private'].includes(channel.type);
+        if (isPrivate) {
+            const isMember = channel.users.some(u => u.id === userId);
+            // Admin Override: Allow Admins to post even if not explicitly a member (implicit access)
+            const isAdmin = user.role === 'admin';
+
+            if (!isMember && !isAdmin) {
+                console.warn(`[ChannelsService] Unauthorized message attempt by user ${userId} to channel ${channelId}`);
+                throw new Error('You are not a member of this channel.');
+            }
+        }
 
         const messageObject: any = {
             content,
@@ -316,6 +371,7 @@ export class ChannelsService implements OnApplicationBootstrap {
                 taskDto.dueDate = new Date().toISOString();
                 taskDto.imageUrl = originalMessage.mediaUrl;
                 taskDto.metadata = { sourceMessageId: originalMessage.id, sourceChannelId: channel.id };
+                taskDto.channelId = channel.id; // 🎯 Set the channel ID for bot notifications
 
                 const task = await this.tasksService.create(taskDto, userId);
                 console.log('[ChannelsService] Task Created (Async):', task.id);
@@ -346,6 +402,14 @@ export class ChannelsService implements OnApplicationBootstrap {
         const savedMessage = await this.messagesRepository.findOne({ where: { id: savedMessageRaw.id }, relations: ['channel'] });
         if (savedMessage) this.chatGateway.broadcastMessage(savedMessage);
         return savedMessage;
+    }
+
+    notifyUserOfGroupAccess(userId: number, group: any) {
+        this.chatGateway.notifyUserOfGroupAccess(userId, group);
+    }
+
+    notifyUserOfGroupRemoval(userId: number, groupId: number, channelId: number) {
+        this.chatGateway.notifyUserOfGroupRemoval(userId, groupId, channelId);
     }
 
     async sendBotMessage(channelId: number, content: string, botName: string = 'JT ADVISOR') {
