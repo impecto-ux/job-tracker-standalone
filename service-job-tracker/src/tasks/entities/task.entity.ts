@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, OneToMany, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 import { Department } from '../../departments/entities/department.entity';
 import { Comment } from './comment.entity'; // Will be created next
@@ -14,12 +14,13 @@ export class Task {
     @Column({ type: 'text', nullable: true })
     description: string;
 
-    @ManyToOne(() => Department)
+    @ManyToOne(() => Department, { nullable: true })
     @JoinColumn({ name: 'department_id' })
     department: Department;
 
-    @Column({ name: 'department_id' })
-    departmentId: number;
+    @Index()
+    @Column({ name: 'department_id', nullable: true })
+    departmentId: number | null;
 
     @ManyToOne(() => User)
     @JoinColumn({ name: 'requester_id' })
@@ -32,15 +33,18 @@ export class Task {
     @JoinColumn({ name: 'owner_id' })
     owner: User;
 
+    @Index()
     @Column({ name: 'owner_id', nullable: true })
     ownerId: number;
 
     @Column({ default: 'P3' })
     priority: string;
 
+    @Index()
     @Column({ default: 'todo' })
     status: string;
 
+    @Index()
     @Column({ name: 'due_date', nullable: true })
     dueDate: Date;
 

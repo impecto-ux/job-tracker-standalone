@@ -107,7 +107,7 @@ export default function Home() {
             {/* Temporary Back Button until JobTracker has integrated navigation */}
             <button
               onClick={() => setActiveApp('dashboard')}
-              className="fixed bottom-20 left-4 md:bottom-6 md:left-6 z-[100] bg-zinc-900 border border-white/10 text-zinc-400 hover:text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xl"
+              className="fixed top-4 right-4 z-[100] bg-zinc-900 border border-white/10 text-zinc-400 hover:text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xl"
             >
               Back to OS
             </button>

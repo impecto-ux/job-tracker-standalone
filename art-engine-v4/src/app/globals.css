@@ -6,8 +6,9 @@
 }
 
 @theme {
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-outfit);
+  --font-display: var(--font-montserrat);
+  --font-mono: var(--font-mono);
 }
 
 @layer utilities {
@@ -44,6 +45,25 @@ body {
   color: var(--foreground);
   background: var(--background);
   font-family: var(--font-sans), system-ui, sans-serif;
+  letter-spacing: -0.015em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-display), sans-serif;
   letter-spacing: -0.02em;
-  /* Tighter, cleaner */
+  font-weight: 700;
+}
+
+code,
+.font-mono,
+.task-id {
+  font-family: var(--font-mono), monospace;
+  letter-spacing: 0;
 }

@@ -7,6 +7,8 @@ import { useStore } from '@/lib/store';
 interface MyRequestsModalProps {
     isOpen: boolean;
     onClose: () => void;
+    isEmbedded?: boolean;
+    onNavigateToTask?: (task: Task) => void;
 }
 
 interface Task {
@@ -19,7 +21,7 @@ interface Task {
     createdAt: string;
 }
 
-export default function MyRequestsModal({ isOpen, onClose }: MyRequestsModalProps) {
+export default function MyRequestsModal({ isOpen, onClose, isEmbedded = false, onNavigateToTask }: MyRequestsModalProps) {
     const { auth } = useStore();
     const [tasks, setTasks] = useState<Task[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -34,6 +36,7 @@ export default function MyRequestsModal({ isOpen, onClose }: MyRequestsModalProp
             setTasks(res.data);
         } catch (error) {
             console.error("Failed to load my requests", error);
+            // Don't crash, just valid empty state or connection error handling could go here
         } finally {
             setIsLoading(false);
         }
@@ -83,6 +86,135 @@ export default function MyRequestsModal({ isOpen, onClose }: MyRequestsModalProp
 
     if (!isOpen) return null;
 
+    const Content = (
+        <div className={`bg-[#121214] border border-white/10 ${isEmbedded ? 'h-full border-0' : 'rounded-2xl w-full max-w-2xl max-h-[80vh] shadow-2xl'} flex flex-col overflow-hidden`}>
+            {/* Header */}
+            {!isEmbedded && (
+                <div className="flex items-center justify-between p-6 border-b border-white/5 bg-zinc-900/50">
+                    <div>
+                        <h2 className="text-xl font-bold text-white tracking-tight">My Requests</h2>
+                        <p className="text-sm text-zinc-500">Manage tasks you've requested</p>
+                    </div>
+                    <button
+                        onClick={onClose}
+                        className="text-zinc-400 hover:text-white transition-colors p-2 hover:bg-white/5 rounded-lg"
+                    >
+                        <X size={20} />
+                    </button>
+                </div>
+            )}
+
+            {/* Content */}
+            <div className={`flex-1 overflow-y-auto ${isEmbedded ? 'p-4' : 'p-6'} space-y-4 custom-scrollbar`}>
+                {isLoading ? (
+                    <div className="flex justify-center py-12">
+                        <Loader2 size={32} className="text-emerald-500 animate-spin" />
+                    </div>
+                ) : tasks.length === 0 ? (
+                    <div className="text-center py-12 text-zinc-500">
+                        No requests found. Create tasks using the chat!
+                    </div>
+                ) : (
+                    tasks.map(task => (
+                        <div key={task.id} className="bg-zinc-900/30 border border-white/5 rounded-xl p-4 hover:border-white/10 transition-colors group">
+                            {isEditing === task.id ? (
+                                <div className="space-y-3">
+                                    <input
+                                        type="text"
+                                        value={editData.title}
+                                        onChange={(e) => setEditData({ ...editData, title: e.target.value })}
+                                        className="w-full bg-zinc-950 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:ring-1 focus:ring-emerald-500 outline-none"
+                                        placeholder="Task Title"
+                                    />
+                                    <textarea
+                                        value={editData.description}
+                                        onChange={(e) => setEditData({ ...editData, description: e.target.value })}
+                                        className="w-full bg-zinc-950 border border-white/10 rounded-lg px-3 py-2 text-sm text-zinc-300 focus:ring-1 focus:ring-emerald-500 outline-none min-h-[80px]"
+                                        placeholder="Description..."
+                                    />
+                                    <div className="flex justify-end gap-2">
+                                        <button
+                                            onClick={() => setIsEditing(null)}
+                                            className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white rounded hover:bg-white/5"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={() => handleSave(task.id)}
+                                            className="px-3 py-1.5 text-xs bg-emerald-500 text-black font-bold rounded hover:bg-emerald-400"
+                                        >
+                                            Save Changes
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="flex items-start gap-4">
+                                    <div className="p-2 bg-zinc-800/50 rounded-lg shrink-0 mt-1">
+                                        {getStatusIcon(task.status)}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <span className="text-[10px] bg-white/5 text-zinc-500 px-1.5 py-0.5 rounded font-mono">
+                                                #{task.id}
+                                            </span>
+                                            <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${task.priority === 'P1' ? 'bg-red-500/10 text-red-500' :
+                                                task.priority === 'P2' ? 'bg-amber-500/10 text-amber-500' :
+                                                    'bg-blue-500/10 text-blue-500'
+                                                }`}>
+                                                {task.priority}
+                                            </span>
+                                            <span className="text-[10px] text-zinc-600 truncate">
+                                                {new Date(task.createdAt).toLocaleString()}
+                                            </span>
+                                        </div>
+                                        <h3 className="text-sm font-bold text-white mb-1 truncate">{task.title}</h3>
+                                        <p className="text-xs text-zinc-400 line-clamp-2">{task.description}</p>
+                                        <div className="mt-2 text-[10px] text-zinc-500 flex items-center gap-2">
+                                            <span>Dept: {task.department?.name || 'General'}</span>
+                                            <span>•</span>
+                                            <span className="capitalize text-zinc-400">{task.status.replace('_', ' ')}</span>
+                                            {onNavigateToTask && (
+                                                <>
+                                                    <span>•</span>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); onNavigateToTask(task); }}
+                                                        className="text-emerald-500 hover:underline font-bold cursor-pointer"
+                                                    >
+                                                        Go to Chat
+                                                    </button>
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button
+                                            onClick={() => handleEdit(task)}
+                                            className="p-2 text-zinc-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                                            title="Edit"
+                                        >
+                                            <Edit2 size={14} />
+                                        </button>
+                                        <button
+                                            onClick={() => handleDelete(task.id)}
+                                            className="p-2 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                                            title="Cancel Request"
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    ))
+                )}
+            </div>
+        </div>
+    );
+
+    if (isEmbedded) {
+        return Content;
+    }
+
     return (
         <AnimatePresence>
             <motion.div
@@ -96,116 +228,10 @@ export default function MyRequestsModal({ isOpen, onClose }: MyRequestsModalProp
                     initial={{ scale: 0.95, opacity: 0, y: 20 }}
                     animate={{ scale: 1, opacity: 1, y: 0 }}
                     exit={{ scale: 0.95, opacity: 0, y: 20 }}
-                    className="bg-[#121214] border border-white/10 rounded-2xl w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl overflow-hidden"
+                    className="w-full max-w-2xl"
                     onClick={(e) => e.stopPropagation()}
                 >
-                    {/* Header */}
-                    <div className="flex items-center justify-between p-6 border-b border-white/5 bg-zinc-900/50">
-                        <div>
-                            <h2 className="text-xl font-bold text-white tracking-tight">My Requests</h2>
-                            <p className="text-sm text-zinc-500">Manage tasks you've requested</p>
-                        </div>
-                        <button
-                            onClick={onClose}
-                            className="text-zinc-400 hover:text-white transition-colors p-2 hover:bg-white/5 rounded-lg"
-                        >
-                            <X size={20} />
-                        </button>
-                    </div>
-
-                    {/* Content */}
-                    <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
-                        {isLoading ? (
-                            <div className="flex justify-center py-12">
-                                <Loader2 size={32} className="text-emerald-500 animate-spin" />
-                            </div>
-                        ) : tasks.length === 0 ? (
-                            <div className="text-center py-12 text-zinc-500">
-                                No requests found. Create tasks using the chat!
-                            </div>
-                        ) : (
-                            tasks.map(task => (
-                                <div key={task.id} className="bg-zinc-900/30 border border-white/5 rounded-xl p-4 hover:border-white/10 transition-colors group">
-                                    {isEditing === task.id ? (
-                                        <div className="space-y-3">
-                                            <input
-                                                type="text"
-                                                value={editData.title}
-                                                onChange={(e) => setEditData({ ...editData, title: e.target.value })}
-                                                className="w-full bg-zinc-950 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:ring-1 focus:ring-emerald-500 outline-none"
-                                                placeholder="Task Title"
-                                            />
-                                            <textarea
-                                                value={editData.description}
-                                                onChange={(e) => setEditData({ ...editData, description: e.target.value })}
-                                                className="w-full bg-zinc-950 border border-white/10 rounded-lg px-3 py-2 text-sm text-zinc-300 focus:ring-1 focus:ring-emerald-500 outline-none min-h-[80px]"
-                                                placeholder="Description..."
-                                            />
-                                            <div className="flex justify-end gap-2">
-                                                <button
-                                                    onClick={() => setIsEditing(null)}
-                                                    className="px-3 py-1.5 text-xs text-zinc-400 hover:text-white rounded hover:bg-white/5"
-                                                >
-                                                    Cancel
-                                                </button>
-                                                <button
-                                                    onClick={() => handleSave(task.id)}
-                                                    className="px-3 py-1.5 text-xs bg-emerald-500 text-black font-bold rounded hover:bg-emerald-400"
-                                                >
-                                                    Save Changes
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="flex items-start gap-4">
-                                            <div className="p-2 bg-zinc-800/50 rounded-lg shrink-0 mt-1">
-                                                {getStatusIcon(task.status)}
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2 mb-1">
-                                                    <span className="text-[10px] bg-white/5 text-zinc-500 px-1.5 py-0.5 rounded font-mono">
-                                                        #{task.id}
-                                                    </span>
-                                                    <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${task.priority === 'P1' ? 'bg-red-500/10 text-red-500' :
-                                                        task.priority === 'P2' ? 'bg-amber-500/10 text-amber-500' :
-                                                            'bg-blue-500/10 text-blue-500'
-                                                        }`}>
-                                                        {task.priority}
-                                                    </span>
-                                                    <span className="text-[10px] text-zinc-600 truncate">
-                                                        {new Date(task.createdAt).toLocaleString()}
-                                                    </span>
-                                                </div>
-                                                <h3 className="text-sm font-bold text-white mb-1 truncate">{task.title}</h3>
-                                                <p className="text-xs text-zinc-400 line-clamp-2">{task.description}</p>
-                                                <div className="mt-2 text-[10px] text-zinc-500 flex items-center gap-2">
-                                                    <span>Dept: {task.department?.name || 'General'}</span>
-                                                    <span>•</span>
-                                                    <span className="capitalize text-zinc-400">{task.status.replace('_', ' ')}</span>
-                                                </div>
-                                            </div>
-                                            <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button
-                                                    onClick={() => handleEdit(task)}
-                                                    className="p-2 text-zinc-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-                                                    title="Edit"
-                                                >
-                                                    <Edit2 size={14} />
-                                                </button>
-                                                <button
-                                                    onClick={() => handleDelete(task.id)}
-                                                    className="p-2 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                                                    title="Cancel Request"
-                                                >
-                                                    <Trash2 size={14} />
-                                                </button>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            ))
-                        )}
-                    </div>
+                    {Content}
                 </motion.div>
             </motion.div>
         </AnimatePresence>

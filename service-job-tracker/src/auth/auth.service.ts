@@ -42,22 +42,30 @@ export class AuthService {
         return null;
     }
 
-    async register(userData: { email: string, password: string, fullName: string, whatsappNumber?: string }) {
+    async register(userData: { email: string, password: string, fullName: string, whatsappNumber?: string, username?: string, avatarUrl?: string, role?: string }) {
         const emailLower = userData.email.toLowerCase();
         const existingByEmail = await this.usersService.findByEmail(emailLower);
         if (existingByEmail) {
             throw new ConflictException('Email already exists');
         }
 
-        // Generate username: bitişik (joined), lowercase, no spaces
-        const baseUsername = userData.fullName.toLowerCase().replace(/\s+/g, '');
-        let username = baseUsername;
-
-        // Simple collision check (optional but recommended)
-        const existingByUsername = await this.usersService.findByUsername(username);
-        if (existingByUsername) {
-            // Add a random number if collision
-            username = `${baseUsername}${Math.floor(Math.random() * 1000)}`;
+        // Use provided username or generate one
+        let username = userData.username;
+        if (!username) {
+            const baseUsername = userData.fullName.toLowerCase().replace(/\s+/g, '');
+            username = baseUsername;
+            // Simple collision check (optional but recommended)
+            const existingByUsername = await this.usersService.findByUsername(username);
+            if (existingByUsername) {
+                // Add a random number if collision
+                username = `${baseUsername}${Math.floor(Math.random() * 1000)}`;
+            }
+        } else {
+            // Check provided username for collision
+            const existingByUsername = await this.usersService.findByUsername(username);
+            if (existingByUsername) {
+                throw new ConflictException('Username already taken');
+            }
         }
 
         const hashedPassword = await bcrypt.hash(userData.password, 10);
@@ -68,7 +76,8 @@ export class AuthService {
                 passwordHash: hashedPassword,
                 fullName: userData.fullName,
                 whatsappNumber: userData.whatsappNumber?.trim() || undefined,
-                role: 'contributor' // Default role for new users
+                role: userData.role || 'contributor',
+                avatarUrl: userData.avatarUrl
             });
 
             return this.login(user);

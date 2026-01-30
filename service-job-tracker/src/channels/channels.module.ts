@@ -8,6 +8,7 @@ import { AiModule } from '../ai/ai.module';
 import { TasksModule } from '../tasks/tasks.module';
 import { UsersModule } from '../users/users.module';
 import { DepartmentsModule } from '../departments/departments.module';
+import { SquadAgentsModule } from '../squad-agents/squad-agents.module';
 
 import { ChatGateway } from './chat.gateway';
 
@@ -17,7 +18,8 @@ import { ChatGateway } from './chat.gateway';
         AiModule,
         forwardRef(() => TasksModule),
         UsersModule,
-        DepartmentsModule
+        DepartmentsModule,
+        SquadAgentsModule,
     ],
     controllers: [ChannelsController],
     providers: [ChannelsService, ChatGateway],

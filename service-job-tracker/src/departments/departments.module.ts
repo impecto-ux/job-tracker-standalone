@@ -4,6 +4,8 @@ import { DepartmentsService } from './departments.service';
 import { DepartmentsController } from './departments.controller';
 import { Department } from './entities/department.entity';
 
+
+
 @Module({
   imports: [TypeOrmModule.forFeature([Department])],
   controllers: [DepartmentsController],

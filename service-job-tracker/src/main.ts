@@ -11,4 +11,15 @@ async function bootstrap() {
   });
   await app.listen(process.env.PORT ?? 3001, '0.0.0.0');
 }
+
+// Global Error Handlers to prevent crash
+process.on('uncaughtException', (err) => {
+  console.error('CRITICAL: Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('CRITICAL: Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+// Force Restart
 bootstrap();

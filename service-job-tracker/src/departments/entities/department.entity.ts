@@ -15,6 +15,9 @@ export class Department {
     @OneToMany(() => User, (user) => user.department)
     users: User[];
 
+    @OneToMany('Team', (team: any) => team.department)
+    teams: any[];
+
     @CreateDateColumn({ name: 'created_at' })
     createdAt: Date;
 }

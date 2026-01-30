@@ -28,6 +28,7 @@ export interface Message {
         name: string;
     }[];
     metadata?: any;
+    taskStatus?: 'PENDING' | 'IN_PROGRESS' | 'DONE';
 }
 
 export interface CreativeStyle {

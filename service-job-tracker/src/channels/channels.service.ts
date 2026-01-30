@@ -10,6 +10,7 @@ import { User } from '../users/entities/user.entity';
 import { CreateTaskDto } from '../tasks/dto/create-task.dto';
 import { DepartmentsService } from '../departments/departments.service';
 import { ChatGateway } from './chat.gateway';
+import { SquadAgentsService } from '../squad-agents/squad-agents.service';
 
 @Injectable()
 export class ChannelsService implements OnApplicationBootstrap {
@@ -18,12 +19,14 @@ export class ChannelsService implements OnApplicationBootstrap {
         private channelsRepository: Repository<Channel>,
         @InjectRepository(Message)
         private messagesRepository: Repository<Message>,
+        private chatGateway: ChatGateway,
         private aiService: AiService,
         @Inject(forwardRef(() => TasksService))
         private tasksService: TasksService,
+        @Inject(forwardRef(() => UsersService))
         private usersService: UsersService,
         private departmentsService: DepartmentsService,
-        private chatGateway: ChatGateway,
+        private squadAgentsService: SquadAgentsService
     ) { }
 
     async onApplicationBootstrap() {
@@ -39,23 +42,86 @@ export class ChannelsService implements OnApplicationBootstrap {
     }
 
     async createChannel(name: string, type: string = 'general') {
+        // Check if channel already exists with this name to avoid duplicates
+        const existing = await this.channelsRepository.findOne({ where: { name } });
+        if (existing) return existing;
+
         const channel = this.channelsRepository.create({ name, type });
-        return this.channelsRepository.save(channel);
+        const savedChannelRaw = await this.channelsRepository.save(channel);
+        const savedChannel = await this.channelsRepository.findOne({ where: { id: savedChannelRaw.id }, relations: ['targetDepartment'] });
+
+        this.chatGateway.broadcastChannelCreated(savedChannel);
+
+        return savedChannel;
     }
 
-    async updateChannel(id: number, name: string) {
-        await this.channelsRepository.update(id, { name });
-        return this.channelsRepository.findOneBy({ id });
+    async updateChannel(id: number, name: string, targetDepartmentId?: number) {
+        const updateData: any = { name };
+
+        if (targetDepartmentId) {
+            const dept = await this.departmentsService.findOne(targetDepartmentId); // Ensure this method exists and returns user friendly type
+            if (dept) {
+                updateData.targetDepartment = dept;
+            }
+        } else if (targetDepartmentId === null) {
+            updateData.targetDepartment = null;
+        }
+
+        await this.channelsRepository.update(id, updateData);
+        return this.channelsRepository.findOne({ where: { id }, relations: ['users', 'targetDepartment'] });
     }
 
     async deleteChannel(id: number) {
         // Manually delete messages first (since we didn't set cascade in entity)
         await this.messagesRepository.delete({ channel: { id } });
-        return this.channelsRepository.delete(id);
+        const result = await this.channelsRepository.delete(id);
+
+        // Notify clients
+        this.broadcastChannelDeleted(id);
+
+        return result;
+    }
+
+    broadcastChannelDeleted(channelId: number) {
+        this.chatGateway.broadcastChannelDeleted(channelId);
+    }
+
+    broadcastChannelCreated(channel: any) {
+        this.chatGateway.broadcastChannelCreated(channel);
+    }
+
+    async findOneBy(where: any) {
+        return this.channelsRepository.findOneBy(where);
     }
 
     async findAll() {
-        return this.channelsRepository.find();
+        return this.channelsRepository.find({ relations: ['users'] });
+    }
+
+    async findByName(name: string) {
+        return this.channelsRepository.findOne({ where: { name } });
+    }
+
+    async addMember(channelId: number, userId: number) {
+        const channel = await this.channelsRepository.findOne({ where: { id: channelId }, relations: ['users'] });
+        const user = await this.usersService.findOne(userId);
+
+        if (channel && user) {
+            if (!channel.users) channel.users = [];
+            // Check if exists
+            if (!channel.users.find(u => u.id === user.id)) {
+                channel.users.push(user);
+                await this.channelsRepository.save(channel);
+            }
+        }
+    }
+
+    async removeMember(channelId: number, userId: number) {
+        const channel = await this.channelsRepository.findOne({ where: { id: channelId }, relations: ['users'] });
+        if (channel && channel.users) {
+            channel.users = channel.users.filter(u => u.id !== userId);
+            await this.channelsRepository.save(channel);
+        }
     }
 
     async getMessages(channelId: number) {
@@ -66,7 +132,8 @@ export class ChannelsService implements OnApplicationBootstrap {
         });
     }
 
-    async postMessage(channelId: number, content: string, userId: number, mediaUrl?: string, mediaType?: string, replyToId?: number): Promise<Message> {
+    async postMessage(channelId: number, content: string, userId: number, mediaUrl?: string, mediaType?: string, replyToId?: number, thumbnailUrl?: string): Promise<Message> {
+        console.log(`[ChannelsService] postMessage: "${content}" @ Channel ${channelId}`);
         const channel = await this.channelsRepository.findOneBy({ id: channelId });
         if (!channel) throw new Error('Channel not found');
 
@@ -78,6 +145,7 @@ export class ChannelsService implements OnApplicationBootstrap {
             channel,
             sender: { id: userId },
             mediaUrl,
+            thumbnailUrl,
             mediaType
         };
 
@@ -106,7 +174,7 @@ export class ChannelsService implements OnApplicationBootstrap {
 - You can attach images to your request! 📸
 - Be specific for better results.`;
 
-            await this.sendSystemMessage(channelId, helpText);
+            await this.sendBotMessage(channelId, helpText);
             return this.messagesRepository.findOneOrFail({ where: { id: savedMessage.id }, relations: ['sender'] });
         }
 
@@ -124,16 +192,32 @@ export class ChannelsService implements OnApplicationBootstrap {
 
         // 3. Trigger AI if applicable (Background)
         const triggerPrefixes = ['!task', '/job', '@bot'];
-        const matchedPrefix = triggerPrefixes.find(p => content.toLowerCase().startsWith(p));
-        const isJobRequest = !!matchedPrefix;
+        let matchedPrefix = triggerPrefixes.find(p => content.toLowerCase().startsWith(p));
 
-        if (isJobRequest) {
-            console.log('[ChannelsService] Triggering AI for content:', content);
+        // Dynamic Check: Mentioned a Squad Agent by name?
+        if (!matchedPrefix) {
+            const allAgents = await this.squadAgentsService.findAll();
+            const mention = allAgents.find(a => content.toLowerCase().startsWith(a.name.toLowerCase()));
+            if (mention) matchedPrefix = mention.name;
+        }
+
+        const isAiRequest = !!matchedPrefix;
+
+        if (isAiRequest) {
+            console.log(`[ChannelsService] AI Requested. Prefix: "${matchedPrefix}". Content: "${content}"`);
             this.handleAiProcessing(savedMessage, content, matchedPrefix!, userId, channel)
                 .catch(e => console.error('[ChannelsService] Background AI Error:', e));
         } else {
-            // Debug log
-            // console.log('[ChannelsService] Not a job request');
+            // Check if ANY agent name is INCLUDED in the content (for more flexible mentions)
+            const allAgents = await this.squadAgentsService.findAll();
+            const mention = allAgents.find(a => content.toLowerCase().includes(a.name.toLowerCase()));
+            if (mention) {
+                console.log(`[ChannelsService] AI Requested (Included Mention): "${mention.name}". Content: "${content}"`);
+                // Passing mention.name as prefix so handleAiProcessing can find them.
+                // Note: content tagging might happen here in the future.
+                this.handleAiProcessing(savedMessage, content, mention.name, userId, channel)
+                    .catch(e => console.error('[ChannelsService] Background AI Error (Mention):', e));
+            }
         }
 
         return savedMessage;
@@ -142,27 +226,72 @@ export class ChannelsService implements OnApplicationBootstrap {
     // Background AI Processor
     private async handleAiProcessing(originalMessage: Message, content: string, prefix: string, userId: number, channel: Channel) {
         try {
-            // Remove prefix
-            const cleanContent = content.slice(prefix.length).trim();
-            if (cleanContent.length < 5) return;
+            console.log('[ChannelsService] handleAiProcessing STARTED');
 
-            console.log('[ChannelsService] Calling AI Service (Background)...');
+            // 1. Check if this is a mention of a specific squad agent
+            const allAgents = await this.squadAgentsService.findAll();
+            // Try to find an agent mentioned ANYWHERE in the content
+            const agent = allAgents.find(a => content.toLowerCase().includes(a.name.toLowerCase()));
+
+            if (agent) {
+                console.log(`[ChannelsService] Specific Agent ${agent.name} mentioned.`);
+
+                const cleanContent = content.replace(new RegExp(agent.name, 'gi'), '').trim();
+                // If the message was ONLY the bot name, maybe they want a status update check
+                const effectiveContent = cleanContent || 'Durum nedir?';
+
+                // Signal that we are thinking
+                await this.sendBotMessage(channel.id, `🔄 ${agent.name} analiz ediyor...`, agent.name);
+
+                // Fetch context: Recent tasks for this squad
+                const tasks = await this.tasksService.findAll();
+                const squadTasks = tasks.filter(t => t.departmentId === agent.groupId);
+
+                // Sort by ID descending to get most recent
+                const sortedTasks = squadTasks.sort((a, b) => b.id - a.id);
+
+                const context = `SQUAD CONTEXT (Group ID: ${agent.groupId}):
+                RECENT SQUAD TASKS:
+                ${sortedTasks.slice(0, 15).map(t => {
+                    const created = t.createdAt ? new Date(t.createdAt).toLocaleString() : 'N/A';
+                    const completed = t.completedAt ? new Date(t.completedAt).toLocaleString() : (t.status === 'done' ? 'Completed (No Date)' : 'In Progress/Todo');
+                    return `- [#${t.id}] "${t.title}" | Status: ${t.status} | Created: ${created} | Completed: ${completed}`;
+                }).join('\n')}
+                
+                TOTAL TASKS IN SQUAD: ${squadTasks.length}
+                COMPLETED TODAY: ${squadTasks.filter(t => t.status === 'done' && t.completedAt && new Date(t.completedAt).toDateString() === new Date().toDateString()).length}
+                `;
+
+                const response = await this.aiService.generateProactiveResponse(agent, {
+                    title: 'Current Status Request',
+                    description: effectiveContent,
+                    department: { name: channel.name },
+                    owner: { fullName: 'User' }
+                } as any, 'user_mention', context);
+
+                if (response) {
+                    console.log(`[ChannelsService] Sending Bot Response from ${agent.name}`);
+                    await this.sendBotMessage(channel.id, response, agent.name);
+                } else {
+                    console.warn(`[ChannelsService] AI Generated EMPTY response for agent ${agent.name}`);
+                    await this.sendBotMessage(channel.id, `Düşünüyorum... (İşlem sırasında bir hata oluştu)`, agent.name);
+                }
+                return;
+            }
+
+            // 2. Otherwise, standard behavior (Task Creation)
+            console.log('[ChannelsService] Calling AI Service (Job Parse)...');
+            const cleanContent = content.slice(prefix.length).trim();
+            if (cleanContent.length < 2) return;
+
             const aiResult = await this.aiService.parseJobRequest(cleanContent);
             const jobData = aiResult.data;
             console.log('[ChannelsService] AI Response:', jobData);
 
             if (aiResult.usage > 0) {
-                await this.usersService.incrementTokenUsage(userId, aiResult.usage);
-            }
-
-            // DEBUG MSG
-            if (content.includes('DEBUG')) {
-                const debugMsg = this.messagesRepository.create({
-                    content: `[SYSTEM DEBUG]\nAI Response: ${JSON.stringify(jobData, null, 2)}`,
-                    channel,
-                    sender: { id: userId } as any,
-                });
-                await this.messagesRepository.save(debugMsg);
+                try {
+                    await this.usersService.incrementTokenUsage(userId, aiResult.usage);
+                } catch (e) { console.error('Failed to increment usage', e); }
             }
 
             // Priority Override
@@ -171,48 +300,36 @@ export class ChannelsService implements OnApplicationBootstrap {
             const finalPriority = manualPriority || jobData.priority;
 
             if (jobData && ['P1', 'P2', 'P3'].includes(finalPriority)) {
-                const dept = await this.departmentsService.findOrCreateByName(channel.name);
+                let dept;
+                try {
+                    dept = await this.departmentsService.findOrCreateByName(channel.name);
+                } catch (e) {
+                    dept = { id: 1, name: 'General' } as any;
+                }
 
                 const taskDto = new CreateTaskDto();
                 taskDto.title = jobData.title;
-                taskDto.description = jobData.description.replace(/\[P[1-3]\]/g, '').trim();
+                taskDto.description = jobData.description ? jobData.description.replace(/\[P[1-3]\]/g, '').trim() : '';
                 taskDto.departmentId = dept.id;
-                taskDto.ownerId = userId;
                 taskDto.priority = finalPriority;
                 taskDto.status = 'todo';
                 taskDto.dueDate = new Date().toISOString();
                 taskDto.imageUrl = originalMessage.mediaUrl;
+                taskDto.metadata = { sourceMessageId: originalMessage.id, sourceChannelId: channel.id };
 
                 const task = await this.tasksService.create(taskDto, userId);
                 console.log('[ChannelsService] Task Created (Async):', task.id);
 
-                // Update original message with link
                 originalMessage.linkedTaskId = task.id;
                 await this.messagesRepository.save(originalMessage);
 
-                // Send Confirmation
-                const successMsg = this.messagesRepository.create({
-                    content: `✅ Task Created: #${task.id}\nTitle: ${taskDto.title}\nGroup: ${dept.name}`,
-                    channel,
-                    sender: null,
-                });
-                // Slight delay to ensure it comes after user message in polling
                 setTimeout(async () => {
-                    const savedSuccessRaw = await this.messagesRepository.save(successMsg);
-                    const savedSuccess = await this.messagesRepository.findOne({ where: { id: savedSuccessRaw.id }, relations: ['channel'] });
-                    if (savedSuccess) this.chatGateway.broadcastMessage(savedSuccess);
+                    await this.sendBotMessage(channel.id, `✅ Task Created: #${task.id}\nTitle: ${taskDto.title}\nGroup: ${dept.name}`);
                 }, 500);
             }
         } catch (e: any) {
-            console.error("[ChannelsService] Failed to auto-create task", e);
-            const errorMsg = this.messagesRepository.create({
-                content: `❌ AI Error: ${e.message}`,
-                channel,
-                sender: null,
-            });
-            const savedErrorRaw = await this.messagesRepository.save(errorMsg);
-            const savedError = await this.messagesRepository.findOne({ where: { id: savedErrorRaw.id }, relations: ['channel'] });
-            if (savedError) this.chatGateway.broadcastMessage(savedError);
+            console.error('[ChannelsService] CRITICAL HANDLE AI ERROR:', e);
+            await this.sendBotMessage(channel.id, `❌ AI Error: ${e.message}`);
         }
     }
 
@@ -223,12 +340,49 @@ export class ChannelsService implements OnApplicationBootstrap {
         const message = this.messagesRepository.create({
             content,
             channel,
-            sender: null, // System message
+            sender: null,
         });
         const savedMessageRaw = await this.messagesRepository.save(message);
         const savedMessage = await this.messagesRepository.findOne({ where: { id: savedMessageRaw.id }, relations: ['channel'] });
         if (savedMessage) this.chatGateway.broadcastMessage(savedMessage);
         return savedMessage;
     }
-}
 
+    async sendBotMessage(channelId: number, content: string, botName: string = 'JT ADVISOR') {
+        const channel = await this.channelsRepository.findOneBy({ id: channelId });
+        if (!channel) return;
+
+        // Try to find the actual system user for this bot to have real identity
+        const allUsers = await this.usersService.findAll();
+        const botUser = allUsers.find(u => u.fullName === botName || u.username === botName.replace('@', '').toLowerCase());
+
+        const message = this.messagesRepository.create({
+            content,
+            channel,
+            sender: botUser || null,
+        });
+
+        const savedMessageRaw = await this.messagesRepository.save(message);
+        const savedMessage = await this.messagesRepository.findOne({
+            where: { id: savedMessageRaw.id },
+            relations: ['channel', 'sender']
+        });
+
+        if (savedMessage) {
+            // Fallback for gateway if no user found
+            if (!savedMessage.sender) {
+                savedMessage.sender = { id: 0, fullName: botName, role: 'bot' } as any;
+            }
+            this.chatGateway.broadcastMessage(savedMessage);
+        }
+        return savedMessage;
+    }
+
+    async deleteMessage(channelId: number, messageId: number) {
+        const message = await this.messagesRepository.findOne({ where: { id: messageId, channel: { id: channelId } } });
+        if (message) {
+            await this.messagesRepository.remove(message);
+            this.chatGateway.broadcastMessageDeleted(messageId, channelId);
+        }
+    }
+}

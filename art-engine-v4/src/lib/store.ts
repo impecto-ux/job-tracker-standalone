@@ -26,6 +26,7 @@ export interface Channel {
     id: number;
     name: string;
     type: string;
+    targetDepartment?: { id: number; name: string };
 }
 
 export interface ChatMessage {
@@ -35,8 +36,12 @@ export interface ChatMessage {
     createdAt: string;
     linkedTaskId?: number;
     mediaUrl?: string; // v4.1
+    thumbnailUrl?: string; // v4.3 (Sharp)
     mediaType?: string; // v4.1
     replyTo?: ChatMessage; // v4.2
+    taskStatus?: 'PENDING' | 'IN_PROGRESS' | 'DONE';
+    priority?: string; // Mission Control
+    isSystem?: boolean; // Mission Control
 }
 
 export interface ChatState {
@@ -47,6 +52,11 @@ export interface ChatState {
     setActiveChannel: (id: number | null) => void;
     addMessage: (channelId: number, message: ChatMessage) => void;
     setMessages: (channelId: number, messages: ChatMessage[]) => void;
+    removeChannel: (id: number) => void;
+    addChannel: (channel: Channel) => void;
+    removeMessage: (channelId: number, messageId: number) => void;
+    lastRefreshAt: number; // Global refresh trigger
+    refreshChannels: () => void;
 }
 
 export interface User {
@@ -55,6 +65,8 @@ export interface User {
     email: string;
     role: string;
     totalPoints?: number;
+    dashboardLayout?: string;
+    department?: { id: number; name: string };
 }
 
 export interface AuthState {
@@ -165,6 +177,31 @@ export const useStore = create<AppState>()(
                             [channelId]: messages
                         }
                     }
+                })),
+                removeChannel: (id) => set((state) => ({
+                    chat: {
+                        ...state.chat,
+                        channels: state.chat.channels.filter(c => c.id !== id)
+                    }
+                })),
+                addChannel: (channel) => set((state) => ({
+                    chat: {
+                        ...state.chat,
+                        channels: [...state.chat.channels, channel]
+                    }
+                })),
+                removeMessage: (channelId, messageId) => set((state) => ({
+                    chat: {
+                        ...state.chat,
+                        messages: {
+                            ...state.chat.messages,
+                            [channelId]: (state.chat.messages[channelId] || []).filter(m => m.id !== messageId)
+                        }
+                    }
+                })),
+                lastRefreshAt: 0,
+                refreshChannels: () => set((state) => ({
+                    chat: { ...state.chat, lastRefreshAt: Date.now() }
                 }))
             },
 
@@ -218,9 +255,12 @@ export const useStore = create<AppState>()(
                 memory: state.memory,
                 generations: state.generations,
                 assets: state.assets,
-                messages: state.messages,
+                messages: [], // Don't persist AI chat history
                 auth: state.auth,
-                chat: state.chat
+                chat: {
+                    ...state.chat,
+                    messages: {} // Don't persist Job Tracker chat history
+                }
             }),
             merge: (persistedState: any, currentState) => ({
                 ...currentState,
@@ -233,8 +273,8 @@ export const useStore = create<AppState>()(
                 chat: {
                     ...currentState.chat,
                     ...persistedState?.chat,
-                    // Ensure messages are merged if needed, or just overwrite. 
-                    // Important: The Actions (functions) from currentState are preserved because we spread currentState.chat first.
+                    // Ensure messages are empty on load so we fetch fresh
+                    messages: {}
                 },
             }),
         }

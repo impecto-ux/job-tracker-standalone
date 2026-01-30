@@ -1,4 +1,5 @@
-import { Entity, PrimaryGeneratedColumn, Column, OneToMany, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+
+import { Entity, PrimaryGeneratedColumn, Column, OneToMany, CreateDateColumn, UpdateDateColumn, ManyToMany, JoinTable, ManyToOne } from 'typeorm';
 import { Message } from './message.entity';
 
 @Entity()
@@ -14,6 +15,13 @@ export class Channel {
 
     @OneToMany(() => Message, (message) => message.channel)
     messages: Message[];
+
+    @ManyToMany('User', (user: any) => user.channels)
+    @JoinTable()
+    users: any[];
+
+    @ManyToOne('Department', { nullable: true, eager: true }) // Eager load for permission checks
+    targetDepartment: any;
 
     @CreateDateColumn()
     createdAt: Date;

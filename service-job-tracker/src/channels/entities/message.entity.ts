@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, CreateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, CreateDateColumn, Index } from 'typeorm';
 import { Channel } from './channel.entity';
 import { User } from '../../users/entities/user.entity';
 
@@ -17,8 +17,10 @@ export class Message {
     replyTo: Message;
 
     @ManyToOne(() => Channel, (channel) => channel.messages)
+    @Index()
     channel: Channel;
 
+    @Index()
     @Column({ nullable: true })
     linkedTaskId: number;
 
@@ -26,8 +28,12 @@ export class Message {
     mediaUrl: string;
 
     @Column({ nullable: true })
+    thumbnailUrl: string;
+
+    @Column({ nullable: true })
     mediaType: string;
 
+    @Index()
     @CreateDateColumn()
     createdAt: Date;
 }

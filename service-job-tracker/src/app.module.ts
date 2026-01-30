@@ -14,6 +14,24 @@ import { AiModule } from './ai/ai.module';
 import { ChannelsModule } from './channels/channels.module';
 import { ScoringModule } from './scoring/scoring.module';
 import { SimulationModule } from './simulation/simulation.module';
+import { GroupsModule } from './groups/groups.module';
+import { TeamsModule } from './teams/teams.module';
+import { TickerModule } from './ticker/ticker.module';
+import { SquadAgentsModule } from './squad-agents/squad-agents.module';
+
+// import { AdminModule } from '@adminjs/nestjs';
+// import { Database, Resource } from '@adminjs/typeorm';
+// import AdminJS from 'adminjs';
+
+import { User } from './users/entities/user.entity';
+import { Task } from './tasks/entities/task.entity';
+import { Department } from './departments/entities/department.entity';
+import { Comment } from './tasks/entities/comment.entity';
+import { StatsInsight } from './ai/entities/stats-insight.entity';
+
+// console.log('AdminJS Adapter Imports:', { Database, Resource });
+// // @ts-ignore
+// AdminJS.registerAdapter({ Database, Resource });
 
 @Module({
   imports: [
@@ -43,6 +61,43 @@ import { SimulationModule } from './simulation/simulation.module';
     UploadsModule,
     ScoringModule,
     SimulationModule,
+    GroupsModule,
+    TeamsModule,
+    TickerModule,
+    SquadAgentsModule,
+    // AdminModule.createAdminAsync({
+    //   imports: [ConfigModule],
+    //   inject: [ConfigService],
+    //   useFactory: async (configService: ConfigService) => ({
+    //     adminJsOptions: {
+    //       rootPath: '/admin',
+    //       resources: [
+    //         { resource: User, options: { navigation: { name: 'Users & Access', icon: 'User' } } },
+    //         { resource: Department, options: { navigation: { name: 'Organization', icon: 'Users' } } },
+    //         { resource: Task, options: { navigation: { name: 'Work Management', icon: 'CheckSquare' } } },
+    //         { resource: Comment, options: { navigation: { name: 'Activity', icon: 'MessageSquare' } } },
+    //         { resource: StatsInsight, options: { navigation: { name: 'Analytics', icon: 'BarChart' } } },
+    //       ],
+    //       branding: {
+    //         companyName: 'Job Tracker Admin',
+    //         theme: {
+    //           colors: {
+    //             primary100: '#10b981', // Emerald 500
+    //             primary80: '#34d399',
+    //             primary60: '#6ee7b7',
+    //             primary40: '#a7f3d0',
+    //             primary20: '#d1fae5',
+    //           }
+    //         }
+    //       }
+    //     },
+    //     sessionOptions: {
+    //       resave: true,
+    //       saveUninitialized: true,
+    //       secret: 'super-secret-admin-key',
+    //     },
+    //   }),
+    // }),
   ],
   controllers: [AppController],
   providers: [AppService],

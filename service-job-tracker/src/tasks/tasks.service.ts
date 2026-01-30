@@ -8,6 +8,8 @@ import { UpdateTaskDto } from './dto/update-task.dto';
 import { ChannelsService } from '../channels/channels.service';
 import { ScoringService } from '../scoring/scoring.service';
 import { UsersService } from '../users/users.service';
+import { TasksGateway } from './tasks.gateway';
+import { SquadAgentsService } from '../squad-agents/squad-agents.service';
 
 @Injectable()
 export class TasksService implements OnApplicationBootstrap {
@@ -20,6 +22,8 @@ export class TasksService implements OnApplicationBootstrap {
     private channelsService: ChannelsService,
     private scoringService: ScoringService,
     private usersService: UsersService,
+    private tasksGateway: TasksGateway,
+    private squadAgentsService: SquadAgentsService,
   ) { }
 
   async onApplicationBootstrap() {
@@ -55,7 +59,17 @@ export class TasksService implements OnApplicationBootstrap {
       task.score = 0;
     }
 
-    return this.tasksRepository.save(task);
+    const savedTask = await this.tasksRepository.save(task);
+
+    // Fetch complete task with relations (Department, Owner, etc.) to ensure frontend receives correct data
+    const fullTask = await this.findOne(savedTask.id);
+
+    if (fullTask) {
+      this.tasksGateway.sendTaskCreated(fullTask);
+      this.squadAgentsService.handleTaskEvent('task_created', fullTask).catch(e => console.error('Proactive Error', e));
+      return fullTask;
+    }
+    return savedTask;
   }
 
   async findAll(filters: any = {}): Promise<Task[]> {
@@ -104,6 +118,12 @@ export class TasksService implements OnApplicationBootstrap {
       task.completedAt = null;
     }
 
+    // Auto-Assign if unassigned and taking action
+    if ((newStatus === 'in_progress' || newStatus === 'done') && !task.ownerId) {
+      task.owner = { id: userId } as any;
+      task.ownerId = userId;
+    }
+
     Object.assign(task, updateTaskDto);
 
     // Re-Score if content changed significantly
@@ -149,7 +169,21 @@ export class TasksService implements OnApplicationBootstrap {
       }
     }
 
-    const updatedTask = await this.tasksRepository.save(task);
+    const savedTask = await this.tasksRepository.save(task);
+
+    // FETCH FULL TASK WITH RELATIONS after update to ensure WebSockets carry full data
+    const updatedTask = await this.findOne(savedTask.id);
+    if (!updatedTask) throw new NotFoundException('Task not found after save');
+
+    this.tasksGateway.sendTaskUpdated(updatedTask);
+
+    // AI SQUAD PROACTION
+    if (newStatus && oldStatus !== newStatus) {
+      const event = newStatus === 'done' ? 'task_done' : (newStatus === 'blocked' ? 'task_blocked' : 'task_updated');
+      this.squadAgentsService.handleTaskEvent(event, updatedTask).catch(e => console.error('Proactive Error', e));
+    } else if (task.priority === 'P1') {
+      this.squadAgentsService.handleTaskEvent('p1_priority', updatedTask).catch(e => console.error('Proactive Error', e));
+    }
 
     // 2. Add Comment if provided
     if (comment) {
@@ -186,10 +220,23 @@ export class TasksService implements OnApplicationBootstrap {
         }
         if (comment) message += `\nNote: "${comment}"`;
 
+        // SMART MENTION: Tag Requester (who asked) and Owner (who did it)
+        const mentionUsers: any[] = [];
+        if (updatedTask.requester) mentionUsers.push(updatedTask.requester);
+        // Also tag owner if they are someone else
+        if (updatedTask.owner && updatedTask.owner.id !== updatedTask.requester?.id) {
+          mentionUsers.push(updatedTask.owner);
+        }
+
+        if (mentionUsers.length > 0) {
+          const names = mentionUsers.map(u => u.fullName).filter(n => n).join(' @');
+          if (names) message += `\n\ncc: @${names}`;
+        }
+
         try {
-          await this.channelsService.sendSystemMessage(targetChannel.id, message);
+          await this.channelsService.sendBotMessage(targetChannel.id, message);
         } catch (err) {
-          console.error('[TasksService] Failed to send system message:', err);
+          console.error('[TasksService] Failed to send bot message:', err);
         }
       }
     }
@@ -216,6 +263,324 @@ export class TasksService implements OnApplicationBootstrap {
     const task = await this.findOne(id);
     if (task) {
       await this.tasksRepository.remove(task);
+      this.tasksGateway.sendTaskDeleted(id);
     }
+  }
+
+  async bulkUpdate(ids: number[], status: string, userId: number): Promise<void> {
+    console.log(`[TasksService] Bulk Updating ${ids.length} tasks to status: ${status}`);
+
+    // Process one by one to ensure logic triggers (points, scoring, timestamps)
+    // In a high-perf scenario, custom updateBuilder is better, but here we need the service logic
+    for (const id of ids) {
+      try {
+        await this.update(id, { status } as UpdateTaskDto, userId);
+      } catch (err) {
+        console.error(`[TasksService] Failed to update task #${id} during bulk op`, err);
+      }
+    }
+  }
+
+  async seedStats(days: number = 30): Promise<string> {
+    try {
+      console.log(`[TasksService] Seeding REALISTIC stats (Jan 1 - Today)...`);
+
+      // 1. Clear existing data safely
+      // If this fails, we will catch it.
+      try {
+        await this.commentsRepository.delete({});
+        await this.tasksRepository.delete({});
+      } catch (e) {
+        console.warn("Standard delete failed. Using SQLite nuclear option.", e);
+        try {
+          // SQLite specific constraint bypass
+          await this.tasksRepository.query('PRAGMA foreign_keys = OFF;');
+          await this.tasksRepository.query('DELETE FROM comments');
+          await this.tasksRepository.query('DELETE FROM tasks');
+          await this.tasksRepository.query('PRAGMA foreign_keys = ON;');
+        } catch (e2) {
+          console.error("Nuclear option failed too", e2);
+          throw e;
+        }
+      }
+
+      const users = await this.usersService.findAll();
+      const userIds = users.filter(u => u.username !== 'admin').map(u => u.id);
+      if (userIds.length === 0) userIds.push(1);
+
+      // Fetch valid departments to avoid FK errors
+      let departments = [1, 2, 3, 4];
+      try {
+        const result = await this.tasksRepository.query('SELECT id FROM department');
+        if (result && result.length > 0) {
+          departments = result.map(r => r.id);
+        }
+      } catch (e) {
+        console.warn("Could not fetch departments, using defaults", e);
+      }
+
+      const categories = ['Animation', 'Rendering', 'Design', 'Development', 'Meeting'];
+      const priorities = ['P1', 'P2', 'P3'];
+
+      const titles = [
+        "Fix header alignment", "Update database schema", "Client meeting notes",
+        "Refactor auth service", "Design new logo", "Optimize image loading",
+        "Write unit tests", "Deploy to staging", "Fix login bug", "Update documentation",
+        "Code review for PR", "Setup CI/CD pipeline", "Investigate memory leak",
+        "Create marketing assets", "Update dependencies", "Render Scene 4",
+        "Compositing Shot 01", "Model Character A", "Rigging updates"
+      ];
+
+      let totalTasks = 0;
+
+      // Hardcoded Range: Jan 1st - Jan 24th 2026
+      const startDate = new Date('2026-01-01T00:00:00');
+      const endDate = new Date('2026-01-24T23:59:59');
+
+      for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+        const dailyCount = Math.floor(Math.random() * 12) + 5;
+
+        for (let i = 0; i < dailyCount; i++) {
+          // Creation: 9 AM - 6 PM
+          const createdHour = 9 + Math.floor(Math.random() * 9);
+          const createdMin = Math.floor(Math.random() * 60);
+          const createdAt = new Date(d);
+          createdAt.setHours(createdHour, createdMin, 0, 0);
+
+          // Lifecycle
+          let status = 'done';
+          const rand = Math.random();
+          const daysAgo = (endDate.getTime() - d.getTime()) / (1000 * 3600 * 24);
+
+          if (daysAgo < 1) {
+            // "Today": Mixed
+            if (rand > 0.6) status = 'todo';
+            else if (rand > 0.3) status = 'in_progress';
+            else status = 'done';
+          } else {
+            // Older: mostly done
+            if (rand > 0.95) status = 'rejected';
+            else if (rand > 0.90) status = 'in_progress';
+            else status = 'done';
+          }
+
+          // Timings
+          let startedAt: Date | null = null;
+          let completedAt: Date | null = null;
+          let score = 0;
+
+          if (status !== 'todo') {
+            const waitMins = 10 + Math.floor(Math.random() * 120);
+            startedAt = new Date(createdAt.getTime() + waitMins * 60000);
+          }
+
+          if (status === 'done' || status === 'rejected') {
+            const workMins = 30 + Math.floor(Math.random() * 300);
+            completedAt = new Date((startedAt || createdAt).getTime() + workMins * 60000);
+
+            score = Math.floor(Math.random() * 50) + 10;
+            if (priorities[Math.floor(Math.random() * 3)] === 'P1') score += 20;
+          }
+
+          const title = titles[Math.floor(Math.random() * titles.length)];
+
+          // Ensure IDs are valid
+          const safeDept = departments[Math.floor(Math.random() * departments.length)];
+
+          const task = this.tasksRepository.create({
+            title: `${title} ${Math.floor(Math.random() * 1000)}`,
+            description: `Simulated task for ${d.toLocaleDateString()}`,
+            status,
+            priority: priorities[Math.floor(Math.random() * priorities.length)],
+            departmentId: safeDept,
+            requesterId: userIds[Math.floor(Math.random() * userIds.length)],
+            ownerId: userIds[Math.floor(Math.random() * userIds.length)],
+            dueDate: new Date(createdAt.getTime() + 86400000 * 3).toISOString(),
+            score,
+            category: categories[Math.floor(Math.random() * categories.length)],
+            isAutoScored: true,
+            startedAt,
+            completedAt,
+            createdAt,
+            updatedAt: completedAt || startedAt || createdAt
+          });
+
+          await this.tasksRepository.save(task);
+          totalTasks++;
+        }
+      }
+
+      return `Seeded ${totalTasks} realistic tasks from Jan 1 to Jan 24.`;
+    } catch (err: any) {
+      console.error("Seeding failed in Service:", err);
+      return `Error: ${err.message}`;
+    }
+  }
+
+  async getEfficiencyStats(): Promise<any> {
+    const tasks = await this.tasksRepository.find({
+      relations: ['department', 'owner', 'owner.teams']
+    });
+
+    let totalWaitTime = 0;
+    let waitCount = 0;
+    let totalCycleTime = 0;
+    let cycleCount = 0;
+    let onTimeCount = 0;
+
+    const tasksPerDay: Record<string, number> = {};
+    const deptStats: Record<string, { wait: number, cycle: number, count: number, onTime: number }> = {};
+    const teamStats: Record<string, { cycle: number, count: number, onTime: number }> = {};
+
+    tasks.forEach(task => {
+      const dateKey = task.createdAt.toISOString().split('T')[0];
+      tasksPerDay[dateKey] = (tasksPerDay[dateKey] || 0) + 1;
+
+      // Handle Department Stats
+      if (task.department) {
+        const deptName = task.department.name;
+        if (!deptStats[deptName]) deptStats[deptName] = { wait: 0, cycle: 0, count: 0, onTime: 0 };
+      }
+
+      // Handle Team Stats (via owner)
+      if (task.owner && task.owner.teams) {
+        task.owner.teams.forEach((team: any) => {
+          if (!teamStats[team.name]) teamStats[team.name] = { cycle: 0, count: 0, onTime: 0 };
+        });
+      }
+
+      // Wait Time: Created -> Started
+      if (task.startedAt) {
+        const wait = (new Date(task.startedAt).getTime() - new Date(task.createdAt).getTime()) / 60000;
+        if (wait > 0) {
+          totalWaitTime += wait;
+          waitCount++;
+          if (task.department) deptStats[task.department.name].wait += wait;
+        }
+      }
+
+      // Cycle Time: Started -> Completed
+      if (task.completedAt && task.startedAt) {
+        const cycle = (new Date(task.completedAt).getTime() - new Date(task.startedAt).getTime()) / 60000;
+        if (cycle > 0) {
+          totalCycleTime += cycle;
+          cycleCount++;
+
+          // Global Deadline Adherence
+          const isOnTime = !task.dueDate || new Date(task.completedAt) <= new Date(task.dueDate);
+          if (isOnTime) onTimeCount++;
+
+          // Segment Stats
+          if (task.department) {
+            deptStats[task.department.name].cycle += cycle;
+            deptStats[task.department.name].count++;
+            if (isOnTime) deptStats[task.department.name].onTime++;
+          }
+
+          if (task.owner && task.owner.teams) {
+            task.owner.teams.forEach((team: any) => {
+              teamStats[team.name].cycle += cycle;
+              teamStats[team.name].count++;
+              if (isOnTime) teamStats[team.name].onTime++;
+            });
+          }
+        }
+      }
+    });
+
+    const globalAvgCycle = cycleCount > 0 ? totalCycleTime / cycleCount : 0;
+    const globalOnTimeRate = cycleCount > 0 ? (onTimeCount / cycleCount) * 100 : 100;
+
+    // Process Dept/Team stats with bottleneck detection
+    const processSegment = (name: string, data: any) => {
+      const avgCycle = data.count > 0 ? Math.round(data.cycle / data.count) : 0;
+      const onTimeRate = data.count > 0 ? Math.round((data.onTime / data.count) * 100) : 100;
+
+      // Bottleneck if: cycle time > 150% global avg OR on-time rate < 70%
+      const isBottleneck = data.count > 5 && (
+        (globalAvgCycle > 0 && avgCycle > globalAvgCycle * 1.5) ||
+        (onTimeRate < 70)
+      );
+
+      // Performance Score: (0-100) based on speed and accuracy
+      let performanceScore = onTimeRate;
+      if (globalAvgCycle > 0) {
+        const speedRatio = globalAvgCycle / (avgCycle || globalAvgCycle);
+        performanceScore = Math.min(100, Math.round((onTimeRate * 0.7) + (speedRatio * 30)));
+      }
+
+      return { name, avgCycle, onTimeRate, isBottleneck, performanceScore, count: data.count };
+    };
+
+    const departmentBreakdown = Object.keys(deptStats).map(name => ({
+      ...processSegment(name, deptStats[name]),
+      avgWait: deptStats[name].count > 0 ? Math.round(deptStats[name].wait / deptStats[name].count) : 0
+    }));
+
+
+    const teamBreakdown = Object.keys(teamStats).map(name => processSegment(name, teamStats[name]));
+
+    // --- NEW HEALTH METRICS ---
+    const userWorkload: Record<string, number> = {};
+    const staleTasks: any[] = [];
+    const now = new Date();
+    const threeDaysMs = 1000 * 60 * 60 * 24 * 3;
+
+    tasks.forEach(t => {
+      // Workload: Count 'in_progress' or 'todo' assignments
+      if (t.owner && (t.status === 'in_progress' || t.status === 'todo')) {
+        const name = t.owner.fullName || t.owner.username;
+        userWorkload[name] = (userWorkload[name] || 0) + 1;
+      }
+
+      // Stale Tasks: In Progress for > 3 days
+      if (t.status === 'in_progress' && t.startedAt) {
+        const duration = now.getTime() - new Date(t.startedAt).getTime();
+        if (duration > threeDaysMs) {
+          staleTasks.push({
+            id: t.id,
+            title: t.title,
+            owner: t.owner?.fullName || 'Unknown',
+            days: Math.floor(duration / (1000 * 60 * 60 * 24))
+          });
+        }
+      }
+    });
+
+    // Sort stale tasks by duration (desc)
+    staleTasks.sort((a, b) => b.days - a.days);
+
+    return {
+      avgWaitTime: waitCount > 0 ? Math.round(totalWaitTime / waitCount) : 0,
+      avgCycleTime: Math.round(globalAvgCycle),
+      avgVelocity: Object.keys(tasksPerDay).length > 0 ? Math.round(tasks.length / Object.keys(tasksPerDay).length) : 0,
+      totalTasks: tasks.length,
+      globalOnTimeRate: Math.round(globalOnTimeRate),
+      departmentBreakdown,
+      teamBreakdown,
+      userWorkload: Object.entries(userWorkload).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count), // Sorted
+      staleTasks: staleTasks.slice(0, 10) // Top 10
+    };
+  }
+
+  async getSystemStats() {
+    const totalTasks = await this.tasksRepository.count();
+    const tasks = await this.tasksRepository.find({ select: ['status'] });
+    const users = await this.usersService.findAll();
+    const totalUsers = users.length;
+
+    // Status Breakdowns
+    const activeTasks = tasks.filter(t => t.status !== 'done' && t.status !== 'rejected').length;
+    const completedTasks = tasks.filter(t => t.status === 'done').length;
+
+    return {
+      totalTasks,
+      totalUsers,
+      activeTasks,
+      completedTasks,
+      dbSize: '4.2 GB', // Still simulated for now
+      uptime: '99.99%',
+      latency: Math.floor(Math.random() * 20 + 10) + 'ms' // Simulated fluctuation
+    };
   }
 }

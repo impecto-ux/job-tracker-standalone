@@ -1,5 +1,6 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn, ManyToMany } from 'typeorm';
 import { Department } from '../../departments/entities/department.entity';
+import { Group } from '../../groups/entities/group.entity';
 
 export enum UserRole {
     ADMIN = 'admin',
@@ -37,15 +38,30 @@ export class User {
     @Column({ name: 'is_active', default: true })
     isActive: boolean;
 
+    @Column({ name: 'is_system_bot', default: false })
+    isSystemBot: boolean;
+
     @Column({ name: 'token_usage', default: 0 })
     tokenUsage: number;
 
     @Column({ name: 'total_points', default: 0 })
     totalPoints: number;
 
+    @Column({ name: 'dashboard_layout', type: 'text', nullable: true })
+    dashboardLayout: string;
+
     @ManyToOne(() => Department, (dept) => dept.users, { nullable: true })
     @JoinColumn({ name: 'department_id' })
     department: Department;
+
+    @ManyToMany('Group', (group: any) => group.users)
+    groups: any[];
+
+    @ManyToMany('Team', (team: any) => team.users)
+    teams: any[];
+
+    @ManyToMany('Channel', (channel: any) => channel.users)
+    channels: any[];
 
     @CreateDateColumn({ name: 'created_at' })
     createdAt: Date;

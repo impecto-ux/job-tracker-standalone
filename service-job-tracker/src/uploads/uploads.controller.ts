@@ -15,9 +15,32 @@ export class UploadsController {
             }
         })
     }))
-    uploadFile(@UploadedFile() file: Express.Multer.File) {
+    async uploadFile(@UploadedFile() file: Express.Multer.File) {
+        let thumbnailUrl: string | null = null;
+
+        // Image Processing (Thumbnail)
+        if (file.mimetype.startsWith('image/')) {
+            try {
+                // eslint-disable-next-line @typescript-eslint/no-var-requires
+                const sharp = require('sharp');
+                const fs = require('fs');
+
+                const thumbFilename = `thumb_${file.filename}`;
+                const thumbPath = `./uploads/${thumbFilename}`;
+
+                await sharp(file.path)
+                    .resize(300, 300, { fit: 'inside' })
+                    .toFile(thumbPath);
+
+                thumbnailUrl = `/api/uploads/${thumbFilename}`;
+            } catch (e) {
+                console.error('Thumbnail generation failed:', e);
+            }
+        }
+
         return {
             url: `/api/uploads/${file.filename}`,
+            thumbnailUrl,
             filename: file.filename,
             originalname: file.originalname,
         };

@@ -1,5 +1,9 @@
-import { Controller, Post, Body, UnauthorizedException, Get, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Body, UnauthorizedException, Get, UseGuards, Request, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname } from 'path';
+import * as fs from 'fs';
 import { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
 
@@ -21,7 +25,25 @@ export class AuthController {
     }
 
     @Post('register')
-    async register(@Body() body: any) {
+    @UseInterceptors(FileInterceptor('file', {
+        storage: diskStorage({
+            destination: (req, file, cb) => {
+                const uploadPath = './uploads/avatars';
+                if (!fs.existsSync(uploadPath)) {
+                    fs.mkdirSync(uploadPath, { recursive: true });
+                }
+                cb(null, uploadPath);
+            },
+            filename: (req, file, cb) => {
+                const randomName = Array(32).fill(null).map(() => (Math.round(Math.random() * 16)).toString(16)).join('');
+                cb(null, `${randomName}${extname(file.originalname)}`);
+            },
+        }),
+    }))
+    async register(@Body() body: any, @UploadedFile() file: Express.Multer.File) {
+        if (file) {
+            body.avatarUrl = `/uploads/avatars/${file.filename}`;
+        }
         return this.authService.register(body);
     }
 

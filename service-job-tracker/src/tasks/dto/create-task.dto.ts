@@ -32,4 +32,7 @@ export class CreateTaskDto {
     @IsString()
     @IsOptional()
     imageUrl?: string;
+
+    @IsOptional()
+    metadata?: any;
 }

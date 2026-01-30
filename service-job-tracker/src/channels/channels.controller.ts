@@ -18,8 +18,8 @@ export class ChannelsController {
     }
 
     @Patch(':id')
-    update(@Param('id') id: string, @Body() body: { name: string }) {
-        return this.channelsService.updateChannel(+id, body.name);
+    update(@Param('id') id: string, @Body() body: { name: string; targetDepartmentId?: number }) {
+        return this.channelsService.updateChannel(+id, body.name, body.targetDepartmentId);
     }
 
     @Delete(':id')
@@ -33,7 +33,16 @@ export class ChannelsController {
     }
 
     @Post(':id/messages')
-    postMessage(@Param('id') id: string, @Body() body: { content: string; mediaUrl?: string; mediaType?: string; replyToId?: number }, @Request() req) {
-        return this.channelsService.postMessage(+id, body.content, req.user.userId, body.mediaUrl, body.mediaType, body.replyToId);
+    postMessage(@Param('id') id: string, @Body() body: { content: string; mediaUrl?: string; mediaType?: string; replyToId?: number; thumbnailUrl?: string }, @Request() req) {
+        return this.channelsService.postMessage(+id, body.content, req.user.userId, body.mediaUrl, body.mediaType, body.replyToId, body.thumbnailUrl);
+    }
+
+    @Post(':id/members/:userId')
+    addMember(@Param('id') id: string, @Param('userId') userId: string) {
+        return this.channelsService.addMember(+id, +userId);
+    }
+    @Delete(':id/messages/:msgId')
+    removeMessage(@Param('id') id: string, @Param('msgId') msgId: string) {
+        return this.channelsService.deleteMessage(+id, +msgId);
     }
 }

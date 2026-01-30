@@ -10,6 +10,16 @@ export class AiController {
 
     @Get('daily-report')
     async getDailyReport(@Request() req) {
-        return this.aiService.generateDailyReport(req.user.id);
+        return this.aiService.generateDailyReport(req.user.userId);
+    }
+
+    @Post('stats-summary')
+    async generateStatsSummary(@Body() body: any) {
+        return this.aiService.generateStatsSummary(body, body.range);
+    }
+
+    @Get('stats-history')
+    async getStatsHistory() {
+        return this.aiService.getStatsHistory();
     }
 }
