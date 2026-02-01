@@ -8,9 +8,10 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 export class GroupsController {
     constructor(private readonly groupsService: GroupsService) { }
 
+    @UseGuards(JwtAuthGuard)
     @Post()
     create(@Body() createGroupDto: { name: string; description?: string; isPrivate?: boolean; targetDepartmentId?: number }, @Request() req) {
-        if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+        if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'manager')) {
             throw new Error('Only Admins and Managers can create groups.');
         }
         return this.groupsService.create(createGroupDto, Number(req.user.userId || req.user.id));
@@ -46,6 +47,7 @@ export class GroupsController {
         return this.groupsService.leavePublicGroup(+id, Number(req.user.userId));
     }
 
+    @UseGuards(JwtAuthGuard)
     @Get(':id')
     findOne(@Param('id') id: string) {
         return this.groupsService.findOne(+id);
@@ -93,8 +95,11 @@ export class GroupsController {
         return this.groupsService.cleanupOldArchives();
     }
 
+    @UseGuards(JwtAuthGuard)
     @Delete(':id')
-    remove(@Param('id') id: string) {
+    remove(@Param('id') id: string, @Request() req) {
+        // Only Admin can hard delete
+        if (req.user.role !== 'admin') throw new Error('Unauthorized');
         return this.groupsService.remove(+id);
     }
 

@@ -16,9 +16,11 @@ export class SquadAgentsService implements OnModuleInit {
     constructor(
         @InjectRepository(SquadAgent)
         private squadAgentRepo: Repository<SquadAgent>,
+        @Inject(forwardRef(() => AiService))
         private aiService: AiService,
         @Inject(forwardRef(() => ChannelsService))
         private channelsService: ChannelsService,
+        @Inject(forwardRef(() => UsersService))
         private usersService: UsersService,
         @Inject(forwardRef(() => GroupsService))
         private groupsService: GroupsService,

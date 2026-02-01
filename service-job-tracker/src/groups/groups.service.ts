@@ -11,9 +11,11 @@ export class GroupsService {
     constructor(
         @InjectRepository(Group)
         private groupsRepository: Repository<Group>,
+        @Inject(forwardRef(() => UsersService))
         private usersService: UsersService,
         @Inject(forwardRef(() => ChannelsService))
         private channelsService: ChannelsService,
+        @Inject(forwardRef(() => DepartmentsService))
         private departmentsService: DepartmentsService,
     ) { }
 

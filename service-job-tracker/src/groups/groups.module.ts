@@ -9,7 +9,7 @@ import { ChannelsModule } from '../channels/channels.module';
 import { DepartmentsModule } from '../departments/departments.module';
 
 @Module({
-    imports: [TypeOrmModule.forFeature([Group]), UsersModule, forwardRef(() => ChannelsModule), DepartmentsModule],
+    imports: [TypeOrmModule.forFeature([Group]), forwardRef(() => UsersModule), forwardRef(() => ChannelsModule), forwardRef(() => DepartmentsModule)],
     controllers: [GroupsController],
     providers: [GroupsService],
     exports: [GroupsService],

@@ -14,6 +14,7 @@ import { GroupsService } from '../groups/groups.service';
 import { TaskHistory } from './entities/task-history.entity';
 import * as fs from 'fs';
 import { join } from 'path';
+import { TaskRevision } from './entities/task-revision.entity';
 
 @Injectable()
 export class TasksService implements OnApplicationBootstrap {
@@ -22,13 +23,19 @@ export class TasksService implements OnApplicationBootstrap {
     private tasksRepository: Repository<Task>,
     @InjectRepository(Comment)
     private commentsRepository: Repository<Comment>,
+    @InjectRepository(TaskRevision)
+    private revisionsRepository: Repository<TaskRevision>,
     @InjectRepository(TaskHistory)
     private historyRepository: Repository<TaskHistory>,
     @Inject(forwardRef(() => ChannelsService))
     private channelsService: ChannelsService,
+    @Inject(forwardRef(() => ScoringService))
     private scoringService: ScoringService,
+    @Inject(forwardRef(() => UsersService))
     private usersService: UsersService,
+    @Inject(forwardRef(() => TasksGateway))
     private tasksGateway: TasksGateway,
+    @Inject(forwardRef(() => SquadAgentsService))
     private squadAgentsService: SquadAgentsService,
     @Inject(forwardRef(() => GroupsService))
     private groupsService: GroupsService,
@@ -98,7 +105,7 @@ export class TasksService implements OnApplicationBootstrap {
   async findOne(id: number): Promise<Task | null> {
     const task = await this.tasksRepository.findOne({
       where: { id },
-      relations: ['department', 'owner', 'requester', 'comments', 'comments.user'],
+      relations: ['department', 'owner', 'requester', 'comments', 'comments.user', 'revisions'],
     });
     if (!task) throw new NotFoundException(`Task #${id} not found`);
     return task;
@@ -116,14 +123,13 @@ export class TasksService implements OnApplicationBootstrap {
     const isSystemAdmin = user.role === 'admin';
     const newStatus = updateTaskDto.status;
 
-    // If trying to pick up or work on the task (changing to in_progress or done)
-    if (!isSystemAdmin && task.channelId && (newStatus === 'in_progress' || newStatus === 'done')) {
+    // If trying to pick up, work on, or reset the task (state change related to workflow)
+    if (!isSystemAdmin && task.channelId && (newStatus === 'in_progress' || newStatus === 'done' || newStatus === 'todo')) {
       // Find the group associated with this task's channel
       const channel = await this.channelsService.findOneBy({ id: task.channelId });
       if (channel) {
-        const groups = await this.groupsService.findAll();
+        const groups = await this.groupsService.findAll({ userRole: 'admin' });
         const taskGroup = groups.find(g => g.channelId === channel.id);
-
         if (taskGroup) {
           // Load the group with targetDepartment relation
           const fullGroup = await this.groupsService.findOne(taskGroup.id);
@@ -133,14 +139,14 @@ export class TasksService implements OnApplicationBootstrap {
             const userDeptId = user.department?.id;
 
             console.log(`[TasksService] Permission Check - Task #${id}:`);
-            console.log(`  - Group: ${fullGroup.name}`);
-            console.log(`  - Allowed Department: ${fullGroup.targetDepartment.name} (ID: ${allowedDeptId})`);
-            console.log(`  - User Department: ${user.department?.name || 'None'} (ID: ${userDeptId})`);
+            console.log(`  - Action: ${task.status} -> ${newStatus}`);
+            console.log(`  - Group: ${fullGroup.name} (Dept: ${fullGroup.targetDepartment.name})`);
+            console.log(`  - User: ${user.username} (Dept ID: ${userDeptId || 'None'})`);
 
             // Check if user's department matches the group's target department
             if (userDeptId !== allowedDeptId) {
               throw new ForbiddenException(
-                `Only ${fullGroup.targetDepartment.name} users can work on tasks in the ${fullGroup.name} group. You are in ${user.department?.name || 'no department'}.`
+                `NO PERMISSION: Only members of '${fullGroup.targetDepartment.name}' can work on tasks in '${fullGroup.name}'.`
               );
             }
 
@@ -197,10 +203,23 @@ export class TasksService implements OnApplicationBootstrap {
       }
     }
 
+    // Revision Workflow Logic
+    if (newStatus === 'revision' && oldStatus !== 'revision') {
+      task.revisionCount = (task.revisionCount || 0) + 1;
+      // Reset completedAt if it was set
+      task.completedAt = null;
+      console.log(`[TasksService] Task #${id} marked for Revision. Count: ${task.revisionCount}`);
+    }
+
+    if (newStatus === 'review') {
+      // Just state update, implied "work done" but waiting for approval
+    }
+
     // Award/Deduct Points based on Status Change
     if (newStatus && oldStatus !== newStatus) {
       console.log(`[TasksService] Status Change: ${oldStatus} -> ${newStatus} for Task #${id} (Owner: ${task.ownerId}, Score: ${task.score})`);
 
+      // DONE Logic (Includes Approval)
       if (newStatus === 'done' && oldStatus !== 'done') {
         // Completed: Add Points
         if (task.ownerId) {
@@ -209,7 +228,9 @@ export class TasksService implements OnApplicationBootstrap {
         } else {
           console.warn(`[TasksService] Cannot award points: Task #${id} has no owner.`);
         }
-      } else if (oldStatus === 'done' && newStatus !== 'done') {
+      }
+      // REVERT Logic: If moving AWAY from done (Reopen, Revision, etc.)
+      else if (oldStatus === 'done' && newStatus !== 'done') {
         // Un-completed: Revert Points
         if (task.ownerId) {
           console.log(`[TasksService] Deducting ${task.score} points from User ${task.ownerId}`);
@@ -350,138 +371,140 @@ export class TasksService implements OnApplicationBootstrap {
 
   async seedStats(days: number = 30): Promise<string> {
     try {
-      console.log(`[TasksService] Seeding REALISTIC stats (Jan 1 - Today)...`);
+      console.log(`[TasksService] Seeding REALISTIC stats...`);
 
-      // 1. Clear existing data safely
-      // If this fails, we will catch it.
-      try {
-        await this.commentsRepository.delete({});
-        await this.tasksRepository.delete({});
-      } catch (e) {
-        console.warn("Standard delete failed. Using SQLite nuclear option.", e);
-        try {
-          // SQLite specific constraint bypass
-          await this.tasksRepository.query('PRAGMA foreign_keys = OFF;');
-          await this.tasksRepository.query('DELETE FROM comments');
-          await this.tasksRepository.query('DELETE FROM tasks');
-          await this.tasksRepository.query('PRAGMA foreign_keys = ON;');
-        } catch (e2) {
-          console.error("Nuclear option failed too", e2);
-          throw e;
-        }
+      // 1. Ensure a user exists (at least admin and one generic user)
+      let users = await this.usersService.findAll();
+      if (users.length < 2) {
+        console.log("[TasksService] Not enough users. Please ensure at least 2 users exist.");
+        return "Seed failed: Not enough users. Please log in first.";
       }
-
-      const users = await this.usersService.findAll();
       const userIds = users.filter(u => u.username !== 'admin').map(u => u.id);
-      if (userIds.length === 0) userIds.push(1);
+      if (userIds.length === 0) userIds.push(users[0].id);
 
-      // Fetch valid departments to avoid FK errors
-      let departments = [1, 2, 3, 4];
-      try {
-        const result = await this.tasksRepository.query('SELECT id FROM department');
-        if (result && result.length > 0) {
-          departments = result.map(r => r.id);
+      // 2. Ensure departments exist
+      const deptNames = ['Graphics', 'Development', 'VFX', 'Management'];
+      for (const name of deptNames) {
+        const existing = await this.tasksRepository.query(`SELECT id FROM departments WHERE name = '${name}'`);
+        if (!existing || existing.length === 0) {
+          await this.tasksRepository.query(`INSERT INTO departments (name) VALUES ('${name}')`);
         }
-      } catch (e) {
-        console.warn("Could not fetch departments, using defaults", e);
       }
+      const departments = (await this.tasksRepository.query('SELECT id FROM departments')).map((r: any) => r.id);
+
+      // 3. Clear existing tasks safely
+      await this.tasksRepository.query('PRAGMA foreign_keys = OFF;');
+      await this.tasksRepository.query('DELETE FROM comments');
+      await this.tasksRepository.query('DELETE FROM tasks');
+      await this.tasksRepository.query('PRAGMA foreign_keys = ON;');
 
       const categories = ['Animation', 'Rendering', 'Design', 'Development', 'Meeting'];
       const priorities = ['P1', 'P2', 'P3'];
-
-      const titles = [
-        "Fix header alignment", "Update database schema", "Client meeting notes",
-        "Refactor auth service", "Design new logo", "Optimize image loading",
-        "Write unit tests", "Deploy to staging", "Fix login bug", "Update documentation",
-        "Code review for PR", "Setup CI/CD pipeline", "Investigate memory leak",
-        "Create marketing assets", "Update dependencies", "Render Scene 4",
-        "Compositing Shot 01", "Model Character A", "Rigging updates"
-      ];
+      const titles = ["Fix header alignment", "Update database schema", "Client meeting", "Render Scene 4", "VFX Shot 01"];
 
       let totalTasks = 0;
+      const now = new Date();
 
-      // Hardcoded Range: Jan 1st - Jan 24th 2026
-      const startDate = new Date('2026-01-01T00:00:00');
-      const endDate = new Date('2026-01-24T23:59:59');
+      for (let i = 0; i < 50; i++) {
+        const createdAt = new Date(now.getTime() - Math.random() * 86400000 * days);
+        const startedAt = Math.random() > 0.3 ? new Date(createdAt.getTime() + Math.random() * 3600000 * 2) : null;
+        const completedAt = (startedAt && Math.random() > 0.4) ? new Date(startedAt.getTime() + Math.random() * 3600000 * 8) : null;
 
-      for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-        const dailyCount = Math.floor(Math.random() * 12) + 5;
+        let status = 'todo';
+        if (completedAt) status = 'done';
+        else if (startedAt) status = 'in_progress';
 
-        for (let i = 0; i < dailyCount; i++) {
-          // Creation: 9 AM - 6 PM
-          const createdHour = 9 + Math.floor(Math.random() * 9);
-          const createdMin = Math.floor(Math.random() * 60);
-          const createdAt = new Date(d);
-          createdAt.setHours(createdHour, createdMin, 0, 0);
-
-          // Lifecycle
-          let status = 'done';
-          const rand = Math.random();
-          const daysAgo = (endDate.getTime() - d.getTime()) / (1000 * 3600 * 24);
-
-          if (daysAgo < 1) {
-            // "Today": Mixed
-            if (rand > 0.6) status = 'todo';
-            else if (rand > 0.3) status = 'in_progress';
-            else status = 'done';
-          } else {
-            // Older: mostly done
-            if (rand > 0.95) status = 'rejected';
-            else if (rand > 0.90) status = 'in_progress';
-            else status = 'done';
-          }
-
-          // Timings
-          let startedAt: Date | null = null;
-          let completedAt: Date | null = null;
-          let score = 0;
-
-          if (status !== 'todo') {
-            const waitMins = 10 + Math.floor(Math.random() * 120);
-            startedAt = new Date(createdAt.getTime() + waitMins * 60000);
-          }
-
-          if (status === 'done' || status === 'rejected') {
-            const workMins = 30 + Math.floor(Math.random() * 300);
-            completedAt = new Date((startedAt || createdAt).getTime() + workMins * 60000);
-
-            score = Math.floor(Math.random() * 50) + 10;
-            if (priorities[Math.floor(Math.random() * 3)] === 'P1') score += 20;
-          }
-
-          const title = titles[Math.floor(Math.random() * titles.length)];
-
-          // Ensure IDs are valid
-          const safeDept = departments[Math.floor(Math.random() * departments.length)];
-
-          const task = this.tasksRepository.create({
-            title: `${title} ${Math.floor(Math.random() * 1000)}`,
-            description: `Simulated task for ${d.toLocaleDateString()}`,
-            status,
-            priority: priorities[Math.floor(Math.random() * priorities.length)],
-            departmentId: safeDept,
-            requesterId: userIds[Math.floor(Math.random() * userIds.length)],
-            ownerId: userIds[Math.floor(Math.random() * userIds.length)],
-            dueDate: new Date(createdAt.getTime() + 86400000 * 3).toISOString(),
-            score,
-            category: categories[Math.floor(Math.random() * categories.length)],
-            isAutoScored: true,
-            startedAt,
-            completedAt,
-            createdAt,
-            updatedAt: completedAt || startedAt || createdAt
-          });
-
-          await this.tasksRepository.save(task);
-          totalTasks++;
-        }
+        const task = this.tasksRepository.create({
+          title: titles[Math.floor(Math.random() * titles.length)],
+          description: "Simulated task",
+          status,
+          priority: priorities[Math.floor(Math.random() * 3)],
+          department: { id: departments[Math.floor(Math.random() * departments.length)] } as any,
+          requester: { id: userIds[Math.floor(Math.random() * userIds.length)] } as any,
+          owner: { id: userIds[Math.floor(Math.random() * userIds.length)] } as any,
+          score: Math.floor(Math.random() * 100),
+          category: categories[Math.floor(Math.random() * categories.length)],
+          startedAt,
+          completedAt,
+          createdAt
+        });
+        await this.tasksRepository.save(task);
+        totalTasks++;
       }
 
-      return `Seeded ${totalTasks} realistic tasks from Jan 1 to Jan 24.`;
-    } catch (err: any) {
-      console.error("Seeding failed in Service:", err);
-      return `Error: ${err.message}`;
+      return `Seeded ${totalTasks} tasks successfully.`;
+    } catch (err) {
+      console.error("[TasksService] Seed error:", err);
+      throw err;
     }
+  }
+
+  async requestRevision(id: number, userId: number, dto: any): Promise<any> {
+    const task = await this.findOne(id);
+    if (!task) throw new NotFoundException();
+
+    // Only Requester or Admin can review/request revision
+    const user = await this.usersService.findOne(userId);
+    const isAdmin = user?.role === 'admin';
+    if (task.requesterId !== userId && !isAdmin) {
+      throw new ForbiddenException('Only the requester or Admin can request a revision.');
+    }
+
+    // 1. Create Revision Record
+    const revision = this.revisionsRepository.create({
+      task: task,
+      revisionNumber: (task.revisionCount || 0) + 1,
+      type: dto.type || 'other',
+      severity: dto.severity || 'low',
+      description: dto.description || 'No description provided.',
+      attachmentUrl: dto.attachmentUrl,
+      requestedBy: { id: userId } as any
+    });
+    await this.revisionsRepository.save(revision);
+
+    // 2. Update Task State
+    task.revisionCount = revision.revisionNumber;
+    task.currentVersion = revision.revisionNumber;
+    task.status = 'revision';
+    task.completedAt = null;
+
+    const savedTask = await this.tasksRepository.save(task);
+
+    // Trigger Proactive Agents
+    this.squadAgentsService.handleTaskEvent('critical_revision', savedTask).catch(e => console.error(e));
+
+
+    // Notify Channel about Revision
+    try {
+      const channels = await this.channelsService.findAll();
+      let targetChannel = channels.find(c => c.name === 'General');
+
+      // Fallback: Use the task's channel or the first available channel
+      if (!targetChannel && task.channelId) {
+        targetChannel = channels.find(c => c.id === task.channelId);
+      }
+      if (!targetChannel && channels.length > 0) {
+        targetChannel = channels[0];
+      }
+
+      if (targetChannel) {
+        const message = `🔄 **Revision Requested for Task #${task.id}**
+Title: **${task.title}**
+Type: ${dto.type} | Severity: ${dto.severity}
+Requested by: @${user?.fullName || 'Unknown'}
+
+"${dto.description}"
+
+Status set to: **REVISION**`;
+        await this.channelsService.sendBotMessage(targetChannel.id, message);
+      }
+    } catch (e) {
+      console.error('Failed to send revision notification', e);
+    }
+
+
+    const fullTask = await this.findOne(savedTask.id);
+    return fullTask;
   }
 
   async getEfficiencyStats(): Promise<any> {
@@ -628,6 +651,200 @@ export class TasksService implements OnApplicationBootstrap {
       userWorkload: Object.entries(userWorkload).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count), // Sorted
       staleTasks: staleTasks.slice(0, 10) // Top 10
     };
+  }
+
+
+
+  async getAdvancedStats(filters: any): Promise<any> {
+    console.log('getAdvancedStats called with filters:', filters); // DEBUG
+    const query = this.tasksRepository.createQueryBuilder('task')
+      .leftJoinAndSelect('task.department', 'department')
+      .leftJoinAndSelect('task.owner', 'owner')
+      .leftJoinAndSelect('task.requester', 'requester');
+
+    // Apply Global Filters
+    if (filters.range) {
+      const now = new Date();
+      if (filters.range === 'Today') {
+        const start = new Date(now.setHours(0, 0, 0, 0));
+        query.andWhere('task.createdAt >= :start', { start });
+      } else if (filters.range === '7d') {
+        const start = new Date(now.setDate(now.getDate() - 7));
+        query.andWhere('task.createdAt >= :start', { start });
+      } else if (filters.range === '30d') {
+        const start = new Date(now.setDate(now.getDate() - 30));
+        query.andWhere('task.createdAt >= :start', { start });
+      }
+    }
+
+    if (filters.departmentId) query.andWhere('task.departmentId = :deptId', { deptId: filters.departmentId });
+    if (filters.ownerId) query.andWhere('task.ownerId = :ownerId', { ownerId: filters.ownerId });
+    if (filters.priority) query.andWhere('task.priority = :priority', { priority: filters.priority });
+
+    try {
+      const tasks = await query.getMany();
+      console.log(`getAdvancedStats found ${tasks.length} tasks`); // DEBUG
+
+      const now = new Date();
+
+      // 1. KPI Calculation
+      const kpis = {
+        created: tasks.length,
+        completed: tasks.filter(t => t.status === 'done').length,
+        wip: tasks.filter(t => t.status === 'in_progress' || t.status === 'review' || t.status === 'revision').length,
+        completionRate: 0,
+        avgTotalTime: 0,
+        avgWaitTime: 0,
+        avgActiveTime: 0,
+        slaBreaches: 0
+      };
+
+      let totalTotalTime = 0;
+      let totalWaitTime = 0;
+      let totalActiveTime = 0;
+      let completedWithTime = 0;
+
+      tasks.forEach(t => {
+        // SLA Thresholds (Hours)
+        const thresholds: Record<string, number> = { 'P1': 2, 'P2': 8, 'P3': 24 };
+        const limitHours = thresholds[t.priority] || 24;
+
+        if (t.completedAt) {
+          const totalTime = (new Date(t.completedAt).getTime() - new Date(t.createdAt).getTime()) / (1000 * 3600);
+          totalTotalTime += totalTime;
+          completedWithTime++;
+
+          if (totalTime > limitHours) kpis.slaBreaches++;
+        } else {
+          const currentAge = (now.getTime() - new Date(t.createdAt).getTime()) / (1000 * 3600);
+          if (currentAge > limitHours) kpis.slaBreaches++;
+        }
+
+        if (t.startedAt) {
+          totalWaitTime += (new Date(t.startedAt).getTime() - new Date(t.createdAt).getTime()) / (1000 * 3600);
+        }
+        if (t.completedAt && t.startedAt) {
+          totalActiveTime += (new Date(t.completedAt).getTime() - new Date(t.startedAt).getTime()) / (1000 * 3600);
+        }
+      });
+
+      kpis.completionRate = kpis.created > 0 ? Math.round((kpis.completed / kpis.created) * 100) : 0;
+      kpis.avgTotalTime = completedWithTime > 0 ? parseFloat((totalTotalTime / completedWithTime).toFixed(1)) : 0;
+      kpis.avgWaitTime = tasks.filter(t => t.startedAt).length > 0 ? parseFloat((totalWaitTime / tasks.filter(t => t.startedAt).length).toFixed(1)) : 0;
+      kpis.avgActiveTime = tasks.filter(t => t.completedAt && t.startedAt).length > 0 ? parseFloat((totalActiveTime / tasks.filter(t => t.completedAt && t.startedAt).length).toFixed(1)) : 0;
+
+      // 2. Time-Series (Created vs Completed)
+      const timeSeriesMap: Record<string, { date: string, created: number, completed: number }> = {};
+      tasks.forEach(t => {
+        const cDate = new Date(t.createdAt).toISOString().split('T')[0];
+        if (!timeSeriesMap[cDate]) timeSeriesMap[cDate] = { date: cDate, created: 0, completed: 0 };
+        timeSeriesMap[cDate].created++;
+
+        if (t.completedAt) {
+          const doneDate = new Date(t.completedAt).toISOString().split('T')[0];
+          if (!timeSeriesMap[doneDate]) timeSeriesMap[doneDate] = { date: doneDate, created: 0, completed: 0 };
+          timeSeriesMap[doneDate].completed++;
+        }
+      });
+      const timeSeries = Object.values(timeSeriesMap).sort((a, b) => a.date.localeCompare(b.date)).slice(-14);
+
+      // 3. Status Distribution
+      const statusMap: Record<string, number> = {};
+      tasks.forEach(t => {
+        statusMap[t.status] = (statusMap[t.status] || 0) + 1;
+      });
+      const statusDistribution = Object.entries(statusMap).map(([name, value]) => ({ name, value }));
+
+      // 4. Bottleneck Heatmap (Dept x Status)
+      const deptStatusMap: Record<string, any> = {};
+      tasks.forEach(t => {
+        const dept = t.department?.name || 'Unassigned';
+        if (!deptStatusMap[dept]) deptStatusMap[dept] = { name: dept, total: 0, avgAge: 0, slaRisk: 0, counts: {} };
+
+        deptStatusMap[dept].total++;
+        deptStatusMap[dept].counts[t.status] = (deptStatusMap[dept].counts[t.status] || 0) + 1;
+
+        const age = (now.getTime() - new Date(t.createdAt).getTime()) / (1000 * 3600);
+        deptStatusMap[dept].avgAge += age;
+
+        const thresholds: Record<string, number> = { 'P1': 2, 'P2': 8, 'P3': 24 };
+        if (age > (thresholds[t.priority] || 24) * 0.8) deptStatusMap[dept].slaRisk++;
+      });
+
+      const bottlenecks = Object.values(deptStatusMap).map((d: any) => ({
+        ...d,
+        avgAge: parseFloat((d.avgAge / d.total).toFixed(1)),
+        slaRiskPercent: Math.round((d.slaRisk / d.total) * 100)
+      }));
+
+      // 5. Assignee Leaderboard
+      const leaderboardMap: Record<string, any> = {};
+      tasks.forEach(t => {
+        if (!t.owner) return;
+        const name = t.owner.fullName || t.owner.username;
+        if (!leaderboardMap[name]) leaderboardMap[name] = {
+          name,
+          completed: 0,
+          totalTime: 0,
+          slaBreaches: 0,
+          wip: 0,
+          count: 0
+        };
+
+        if (t.status === 'done') {
+          leaderboardMap[name].completed++;
+          if (t.completedAt) {
+            leaderboardMap[name].totalTime += (new Date(t.completedAt).getTime() - new Date(t.createdAt).getTime()) / (1000 * 3600);
+
+            const thresholds: Record<string, number> = { 'P1': 2, 'P2': 8, 'P3': 24 };
+            if ((new Date(t.completedAt).getTime() - new Date(t.createdAt).getTime()) / (1000 * 3600) > (thresholds[t.priority] || 24)) {
+              leaderboardMap[name].slaBreaches++;
+            }
+          }
+        } else if (t.status === 'in_progress') {
+          leaderboardMap[name].wip++;
+        }
+        leaderboardMap[name].count++;
+      });
+
+      const leaderboard = Object.values(leaderboardMap).map((u: any) => ({
+        ...u,
+        avgTime: u.completed > 0 ? parseFloat((u.totalTime / u.completed).toFixed(1)) : 0,
+        onTimePercent: u.completed > 0 ? Math.round(((u.completed - u.slaBreaches) / u.completed) * 100) : 100
+      })).sort((a, b) => b.completed - a.completed);
+
+      // 6. Aging Tasks (Top 10)
+      const agingTasks = tasks
+        .filter(t => t.status !== 'done' && t.status !== 'rejected')
+        .map(t => ({
+          id: t.id,
+          title: t.title,
+          group: t.metadata?.groupName || 'Direct',
+          owner: t.owner?.fullName || 'Unassigned',
+          status: t.status,
+          priority: t.priority,
+          ageHours: Math.round((now.getTime() - new Date(t.createdAt).getTime()) / (1000 * 3600)),
+          lastActivity: t.updatedAt
+        }))
+        .sort((a, b) => b.ageHours - a.ageHours)
+        .slice(0, 10);
+
+      return {
+        kpis,
+        timeSeries,
+        statusDistribution,
+        bottlenecks,
+        leaderboard,
+        agingTasks,
+        filters: {
+          total: tasks.length,
+          applied: filters
+        }
+      };
+    } catch (error) {
+      console.error('getAdvancedStats ERROR:', error);
+      throw error;
+    }
   }
 
   async getSystemStats() {

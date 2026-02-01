@@ -42,6 +42,10 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
         this.server.emit('message_deleted', { messageId, channelId });
     }
 
+    broadcastMessageUpdated(message: any) {
+        this.server.emit('message_updated', message);
+    }
+
     broadcastChannelCreated(channel: any) {
         this.server.emit('channel_created', channel);
     }

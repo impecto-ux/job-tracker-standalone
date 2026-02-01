@@ -12,9 +12,9 @@ import { GroupsModule } from '../groups/groups.module';
 @Module({
     imports: [
         TypeOrmModule.forFeature([SquadAgent]),
-        AiModule,
+        forwardRef(() => AiModule),
         forwardRef(() => ChannelsModule),
-        UsersModule,
+        forwardRef(() => UsersModule),
         forwardRef(() => TasksModule),
         forwardRef(() => GroupsModule),
     ],

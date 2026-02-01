@@ -20,12 +20,15 @@ export class ChannelsService implements OnApplicationBootstrap {
         @InjectRepository(Message)
         private messagesRepository: Repository<Message>,
         private chatGateway: ChatGateway,
+        @Inject(forwardRef(() => AiService))
         private aiService: AiService,
         @Inject(forwardRef(() => TasksService))
         private tasksService: TasksService,
         @Inject(forwardRef(() => UsersService))
         private usersService: UsersService,
+        @Inject(forwardRef(() => DepartmentsService))
         private departmentsService: DepartmentsService,
+        @Inject(forwardRef(() => SquadAgentsService))
         private squadAgentsService: SquadAgentsService
     ) { }
 
@@ -377,7 +380,8 @@ export class ChannelsService implements OnApplicationBootstrap {
                 console.log('[ChannelsService] Task Created (Async):', task.id);
 
                 originalMessage.linkedTaskId = task.id;
-                await this.messagesRepository.save(originalMessage);
+                const updatedMsg = await this.messagesRepository.save(originalMessage);
+                this.chatGateway.broadcastMessageUpdated(updatedMsg);
 
                 setTimeout(async () => {
                     await this.sendBotMessage(channel.id, `✅ Task Created: #${task.id}\nTitle: ${taskDto.title}\nGroup: ${dept.name}`);

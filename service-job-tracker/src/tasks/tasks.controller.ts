@@ -40,6 +40,11 @@ export class TasksController {
     return this.tasksService.getEfficiencyStats();
   }
 
+  @Get('stats/advanced')
+  getAdvancedStats(@Query() filters: any) {
+    return this.tasksService.getAdvancedStats(filters);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.tasksService.findOne(+id);
@@ -61,6 +66,12 @@ export class TasksController {
   addComment(@Param('id') id: string, @Body() body: { content: string; mediaUrl?: string; mediaType?: string }, @Request() req) {
     const userId = req.user.userId;
     return this.tasksService.addComment(+id, body.content, userId, body.mediaUrl, body.mediaType);
+  }
+
+  @Post(':id/request-revision')
+  requestRevision(@Param('id') id: string, @Body() body: any, @Request() req) {
+    const userId = req.user.userId;
+    return this.tasksService.requestRevision(+id, userId, body);
   }
 
   @Delete(':id')

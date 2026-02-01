@@ -1,7 +1,8 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 import { Department } from '../../departments/entities/department.entity';
-import { Comment } from './comment.entity'; // Will be created next
+import { Comment } from './comment.entity';
+import { TaskRevision } from './task-revision.entity';
 
 @Entity('tasks')
 export class Task {
@@ -55,17 +56,29 @@ export class Task {
     @Column({ name: 'image_url', nullable: true })
     imageUrl: string;
 
+    @Column({ name: 'revision_channel_id', nullable: true })
+    revisionChannelId: number;
+
     @Column({ type: 'simple-json', default: '{}' })
     metadata: any;
 
     @OneToMany(() => Comment, (comment) => comment.task)
     comments: Comment[];
 
+    @OneToMany(() => TaskRevision, (revision: TaskRevision) => revision.task)
+    revisions: TaskRevision[];
+
+    @Column({ name: 'current_version', default: 1 })
+    currentVersion: number;
+
     @CreateDateColumn({ name: 'created_at' })
     createdAt: Date;
 
     @Column({ name: 'score', default: 0 })
     score: number;
+
+    @Column({ name: 'revision_count', default: 0 })
+    revisionCount: number;
 
     @Column({ name: 'category', default: 'Uncategorized' })
     category: string;

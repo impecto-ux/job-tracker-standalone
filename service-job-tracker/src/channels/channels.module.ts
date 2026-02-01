@@ -15,11 +15,11 @@ import { ChatGateway } from './chat.gateway';
 @Module({
     imports: [
         TypeOrmModule.forFeature([Channel, Message]),
-        AiModule,
+        forwardRef(() => AiModule),
         forwardRef(() => TasksModule),
-        UsersModule,
-        DepartmentsModule,
-        SquadAgentsModule,
+        forwardRef(() => UsersModule),
+        forwardRef(() => DepartmentsModule),
+        forwardRef(() => SquadAgentsModule),
     ],
     controllers: [ChannelsController],
     providers: [ChannelsService, ChatGateway],

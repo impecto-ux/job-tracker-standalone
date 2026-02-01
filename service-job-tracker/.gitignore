@@ -3,7 +3,7 @@ node_modules
 /dist
 
 # Database
-*.sqlite
+# *.sqlite (Unignored for backup)
 *.sqlite-journal
 
 # Environment

@@ -14,7 +14,7 @@ import { AuthModule } from '../auth/auth.module';
         ConfigModule,
         forwardRef(() => UsersModule),
         forwardRef(() => TasksModule),
-        AuthModule
+        forwardRef(() => AuthModule)
     ], // dependency cycle fix
     providers: [AiService],
     exports: [AiService],

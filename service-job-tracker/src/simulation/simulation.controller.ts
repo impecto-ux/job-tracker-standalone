@@ -1,4 +1,4 @@
-import { Controller, Post } from '@nestjs/common';
+import { Controller, Post, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../users/entities/user.entity';
@@ -12,6 +12,7 @@ export class SimulationController {
     constructor(
         @InjectRepository(User) private userRepo: Repository<User>,
         @InjectRepository(Department) private deptRepo: Repository<Department>,
+        @Inject(forwardRef(() => TasksService))
         private tasksService: TasksService,
     ) { }
 

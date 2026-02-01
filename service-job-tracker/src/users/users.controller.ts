@@ -11,6 +11,7 @@ import * as fs from 'fs';
 export class UsersController {
     constructor(private readonly usersService: UsersService) { }
 
+    @UseGuards(JwtAuthGuard)
     @Post()
     create(@Body() userData: Partial<User>) {
         return this.usersService.create(userData);
