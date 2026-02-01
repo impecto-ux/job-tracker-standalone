@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ArrowLeft, Layout, Trash2, Edit2, Shield, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Layout, Trash2, Edit2, Shield, AlertCircle, Download } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import MessageItem from './MessageItem';
 
@@ -81,6 +81,22 @@ const MessageList: React.FC<MessageListProps> = ({
                     <button onClick={() => { navigator.clipboard.writeText(contextMenu.msg.content); setContextMenu(null); }} className="w-full text-left px-4 py-2 hover:bg-[#111b21] text-[#d1d7db] text-sm flex items-center gap-3">
                         <Layout size={16} /> Copy
                     </button>
+
+                    {/* Download Attachment */}
+                    {contextMenu.msg.mediaUrl && (
+                        <button onClick={() => {
+                            const link = document.createElement('a');
+                            link.href = contextMenu.msg.mediaUrl || '';
+                            link.target = '_blank';
+                            link.download = contextMenu.msg.mediaUrl?.split('/').pop() || 'download';
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                            setContextMenu(null);
+                        }} className="w-full text-left px-4 py-2 hover:bg-[#111b21] text-[#d1d7db] text-sm flex items-center gap-3">
+                            <Download size={16} /> Download
+                        </button>
+                    )}
 
                     {currentUser?.id === contextMenu.msg.sender?.id && (
                         <>

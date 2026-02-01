@@ -17,6 +17,8 @@ interface MessageItemProps {
     onLightbox: (url: string) => void;
 }
 
+const USE_GLASS_MESSAGES = true;
+
 const MessageItem: React.FC<MessageItemProps> = ({
     msg,
     currentUser,
@@ -31,6 +33,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
     onDelete,
     onLightbox
 }) => {
+    console.log('[DEBUG] Rendering MessageItem:', msg.id);
     // Local Context Menu State
     const [contextMenu, setContextMenu] = React.useState<{ x: number, y: number, msg: any, align?: 'up' | 'down' } | null>(null);
 
@@ -107,49 +110,318 @@ const MessageItem: React.FC<MessageItemProps> = ({
     const isMentioned = currentUser?.fullName && msg.content.includes(`@${currentUser.fullName}`);
     const isActivityLog = !msg.sender && (msg.content.includes('added') || msg.content.includes('removed') || msg.content.includes('joined') || msg.content.includes('left')) && !msg.content.includes('TASK');
     const isBotCheck = msg.sender?.id === 0 || (msg.sender as any)?.role === 'bot' || !msg.sender;
+    const isBot = isBotCheck;
 
     // Bot Identity & P1 Logic
     const botIdentityRef = { fullName: 'JT ADVISOR', email: 'system@art-engine.ai', role: 'bot', id: 0 };
-    const displaySender = isBotCheck
+    const displaySender = isBot
         ? { ...botIdentityRef, ...msg.sender }
         : (msg.sender || { fullName: 'Unknown', email: '' });
 
-    const isBot = isBotCheck;
-    const isTask = msg.linkedTaskId || msg.taskStatus || msg.content.includes('!task');
+    // --- High-End Bot Notification Parser ---
+    const parseBotContent = (content: string) => {
+        const lines = content.split('\n');
+        const taskMatch = content.match(/#(\d+)/);
+        const taskNumber = taskMatch ? `#${taskMatch[1]}` : null;
 
-    if (isActivityLog) {
+        const isCreated = content.includes('Task Created');
+        const isUpdated = content.includes('Task Updated');
+        const isPriorityChange = content.includes('Priority Changed');
+
+        let status = 'SYSTEM';
+        if (content.match(/DONE/i)) status = 'DONE';
+        else if (content.match(/IN PROGRESS/i)) status = 'ON IT';
+        else if (isCreated) status = 'OPENED';
+        else if (isPriorityChange) status = 'CRITICAL';
+
+        // Extract Title or meaningful summary
+        let title = '';
+        const titleLine = lines.find(l => l.includes('Title:'));
+        if (titleLine) title = titleLine.split('Title:')[1].trim();
+        else if (isCreated) title = 'New Request';
+        else if (isPriorityChange) title = 'Escalation Alert';
+
+        // Extract cc:
+        const ccLine = lines.find(l => l.includes('cc:'));
+        const mentions = ccLine ? ccLine.split('cc:')[1].trim() : '';
+
+        // Extract Group
+        const groupLine = lines.find(l => l.includes('Group:'));
+        const group = groupLine ? groupLine.split('Group:')[1].trim() : '';
+
+        return { taskNumber, status, isCreated, isUpdated, isPriorityChange, title, mentions, group };
+    };
+
+    const renderBotUI = () => {
+        const data = parseBotContent(msg.content);
+        const themeColor = isP1 ? 'rose' : (data.status === 'DONE' ? 'emerald' : data.status === 'ON IT' ? 'blue' : 'zinc');
+        const accentHex = themeColor === 'rose' ? '#f43f5e' : themeColor === 'emerald' ? '#10b981' : themeColor === 'blue' ? '#3b82f6' : '#a1a1aa';
+
         return (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-center w-full my-4 px-10">
-                <div className="bg-[#182229]/80 text-[#8696a0] px-4 py-2 rounded-lg text-[10px] font-mono shadow-sm border border-white/5 flex items-center gap-3 w-full max-w-xl">
-                    <div className="flex items-center gap-1.5 shrink-0"><Terminal size={12} className="text-zinc-600" /><span className="text-zinc-700 font-bold">[SYSTEM]</span></div>
-                    <div className="h-3 w-px bg-white/5 shrink-0" />
-                    <div className="flex-1 truncate tracking-tight uppercase">{msg.content}</div>
-                    <div className="text-[9px] text-zinc-700 shrink-0">{time}</div>
+            <motion.div
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="flex flex-col items-center w-full my-6 px-6 relative"
+            >
+                {/* Glassy Premium Card */}
+                <div className={`w-full max-w-lg relative group`}>
+                    {/* Background Glow */}
+                    <div className="absolute inset-0 rounded-2xl blur-3xl opacity-20 pointer-events-none" style={{ backgroundColor: accentHex }} />
+
+                    <div className={`relative bg-[#09090b]/40 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden shadow-2xl`}>
+                        {/* Status Left Accent Line (Integrated) */}
+                        <div className="absolute left-0 top-0 bottom-0 w-1 opacity-80" style={{ backgroundColor: accentHex, boxShadow: `0 0 10px ${accentHex}` }} />
+
+                        {/* Top Highlights using gradients */}
+                        <div className="absolute top-0 inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-50" />
+
+                        <div className="p-5 flex gap-5">
+                            {/* Icon Column */}
+                            <div className="flex flex-col items-center shrink-0">
+                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 duration-500 shadow-lg backdrop-blur-md border border-white/5 relative overflow-hidden`}
+                                    style={{
+                                        backgroundColor: `${accentHex}10`,
+                                        color: accentHex
+                                    }}
+                                >
+                                    <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent opacity-50" />
+                                    {isP1 ? <Zap size={20} fill="currentColor" className="animate-pulse relative z-10" /> :
+                                        data.status === 'DONE' ? <Check size={20} strokeWidth={3} className="relative z-10" /> :
+                                            data.status === 'ON IT' ? <Zap size={20} className="animate-spin-slow relative z-10" /> :
+                                                <Bot size={20} className="relative z-10" />}
+                                </div>
+                            </div>
+
+                            {/* Content Column */}
+                            <div className="flex-1 min-w-0 pt-0.5">
+                                <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">
+                                            {displaySender.fullName}
+                                        </span>
+                                        <span className="h-0.5 w-0.5 rounded-full bg-zinc-600" />
+                                        <span className="text-[10px] font-mono text-zinc-500">{time}</span>
+                                    </div>
+                                    {data.taskNumber && (
+                                        <div className="px-2 py-0.5 rounded-lg bg-white/5 border border-white/10 text-[10px] font-black text-zinc-300 tracking-wider shadow-inner backdrop-blur-sm">
+                                            {data.taskNumber}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <h3 className="text-sm font-bold text-white leading-snug tracking-tight mb-3 drop-shadow-md">
+                                    {data.title || msg.content.split('\n')[0].replace(/\*\*/g, '')}
+                                </h3>
+
+                                <div className="flex flex-wrap gap-x-6 gap-y-2">
+                                    {data.group && (
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[9px] uppercase tracking-wider text-zinc-500 font-bold">Group</span>
+                                            <span className="text-[11px] text-zinc-300 font-medium px-2 py-0.5 rounded-md bg-white/5 border border-white/5">{data.group}</span>
+                                        </div>
+                                    )}
+                                    {data.mentions && (
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[9px] uppercase tracking-wider text-zinc-500 font-bold">Signal</span>
+                                            <div className="text-[11px] text-zinc-300/80">{renderContent(data.mentions)}</div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Glassy Footer */}
+                        <div className="bg-black/20 backdrop-blur-md border-t border-white/5 px-5 py-2.5 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <span className={`text-[10px] font-black uppercase tracking-[0.25em] drop-shadow-sm ${taskStatus === 'revision' ? 'text-amber-500' : taskStatus === 'review' ? 'text-purple-400' : ''}`} style={{ color: taskStatus === 'revision' || taskStatus === 'review' ? undefined : accentHex }}>
+                                    {data.status === 'revision' ? 'NEEDS REVISION' : data.status === 'review' ? 'PENDING APPROVAL' : data.status}
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-2 text-[9px] text-zinc-600 font-bold uppercase tracking-widest">
+                                <Shield size={10} />
+                                System Integrity
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </motion.div>
         );
+    };
+
+    const renderActivityLogUI = () => {
+        return (
+            <motion.div
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex items-center justify-center w-full my-8 px-10 group"
+            >
+                <div className="flex items-center gap-6 w-full max-w-2xl">
+                    <div className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-white/10 to-transparent opacity-30 group-hover:opacity-100 transition-opacity duration-700" />
+
+                    <div className="flex flex-col items-center gap-1.5">
+                        <span className="text-[10px] font-bold tracking-[0.25em] text-zinc-500 uppercase italic transition-colors group-hover:text-zinc-300">
+                            {msg.content}
+                        </span>
+                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all duration-500 translate-y-1 group-hover:translate-y-0">
+                            <span className="h-1 w-1 rounded-full bg-zinc-800" />
+                            <span className="text-[8px] font-black tracking-[0.3em] text-zinc-600 uppercase">
+                                {time} · Signal Log
+                            </span>
+                            <span className="h-1 w-1 rounded-full bg-zinc-800" />
+                        </div>
+                    </div>
+
+                    <div className="h-[1px] flex-1 bg-gradient-to-l from-transparent via-white/10 to-transparent opacity-30 group-hover:opacity-100 transition-opacity duration-700" />
+                </div>
+            </motion.div>
+        );
+    };
+
+    const renderUserMessageUI = () => {
+        const accentHex = isMe ? '#00e676' : (isP1 ? '#f43f5e' : (isTask ? '#818cf8' : '#e2e2e2'));
+        const initial = displaySender.fullName ? displaySender.fullName.charAt(0).toUpperCase() : '?';
+
+        return (
+            <motion.div
+                initial={{ opacity: 0, x: isMe ? 20 : -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                className={`flex w-full mb-3 px-4 relative ${isMe ? 'justify-end' : 'justify-start'}`}
+            >
+                {/* Background Decoration (Initial) */}
+                <div className={`absolute inset-0 flex pointer-events-none select-none overflow-hidden opacity-[0.03] ${isMe ? 'justify-end pr-10' : 'justify-start pl-10'}`}>
+                    <span className="text-[100px] font-black italic tracking-tighter text-white -mt-4">
+                        {initial}
+                    </span>
+                </div>
+
+                <div className={`relative max-w-[85%] group`}>
+                    {/* Shadow/Glow */}
+                    <div className={`absolute -inset-1 rounded-2xl blur-xl opacity-0 group-hover:opacity-10 transition-opacity duration-500`}
+                        style={{ backgroundColor: accentHex }}
+                    />
+
+                    <div className={`relative backdrop-blur-xl border rounded-2xl overflow-hidden shadow-xl
+                        ${isTask ? (isMe ? 'bg-indigo-500/10 border-indigo-500/40' : 'bg-indigo-900/30 border-indigo-500/30') : 'bg-black/40 border-white/10'}
+                    `}>
+                        {/* Task Progress Header (Optional) */}
+                        {isTask && (
+                            <div className={`h-1 w-full ${taskStatus === 'done' ? 'bg-emerald-500' : taskStatus === 'in_progress' ? 'bg-blue-500' : 'bg-zinc-500'}`} />
+                        )}
+
+                        <div className="p-3">
+                            {/* Reply Context (Glassy) */}
+                            {msg.replyTo && (
+                                <div className="rounded-lg p-2 mb-2 text-xs border-l-2 bg-white/5 border-white/20 opacity-80 backdrop-blur-md">
+                                    <div className="font-bold mb-0.5" style={{ color: getSenderColor(msg.replyTo.sender?.fullName || '?').replace('text-', '') }}>
+                                        {msg.replyTo.sender?.fullName || 'Unknown'}
+                                    </div>
+                                    <div className="opacity-70 truncate text-white/70">{msg.replyTo.content}</div>
+                                </div>
+                            )}
+
+                            {/* Header: Sender Name (Others Only) */}
+                            {!isMe && (
+                                <div className="flex items-center gap-2 mb-1.5">
+                                    <span className={`text-[10px] font-black tracking-widest uppercase ${getSenderColor(displaySender.fullName || '?')}`}>
+                                        {displaySender.fullName}
+                                    </span>
+                                </div>
+                            )}
+
+                            {/* Media (Optimized for Glass) */}
+                            {msg.mediaUrl && (
+                                <div className="mb-2 rounded-xl overflow-hidden border border-white/5">
+                                    {msg.mediaType === 'video' || (msg.mediaUrl.match(/\.(mp4|webm|ogg)$/i)) ?
+                                        <video src={msg.mediaUrl} controls className="max-w-full" /> :
+                                        (msg.mediaType === 'image' || msg.mediaUrl.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i)) ?
+                                            <img src={msg.thumbnailUrl || msg.mediaUrl} alt="Attachment" className="max-w-full cursor-pointer hover:scale-[1.02] transition-transform" onClick={() => onLightbox(msg.mediaUrl || null)} /> :
+                                            <a href={msg.mediaUrl} download className="flex items-center gap-3 p-3 bg-white/5 hover:bg-white/10 transition-colors group/doc">
+                                                <div className="p-2 rounded bg-emerald-500/20 text-emerald-400"><Layout size={18} /></div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="text-xs font-bold text-white truncate">{msg.mediaUrl.split('/').pop()?.split('-').slice(1).join('-') || 'Document'}</div>
+                                                    <div className="text-[8px] text-zinc-500 uppercase font-mono">{msg.mediaUrl.split('.').pop()}</div>
+                                                </div>
+                                            </a>
+                                    }
+                                </div>
+                            )}
+
+                            {/* Content */}
+                            <div className={`whitespace-pre-wrap break-words select-text text-[13px] leading-relaxed text-zinc-100 ${isMe ? 'pr-2' : ''}`}>
+                                {renderContent(msg.content)}
+                            </div>
+
+                            {/* Footer: Time & Status */}
+                            <div className="flex items-center justify-end gap-3 mt-3 opacity-60 select-none">
+                                {isTask && (
+                                    <div className="flex items-center gap-2 mr-auto px-2 py-1 rounded-lg bg-black/40 border border-white/10 shadow-inner" title={`Status: ${taskStatus || 'PENDING'}`}>
+                                        <div className="flex gap-1.5 items-center">
+                                            {/* TODO / DRAFT */}
+                                            <div className={`w-2 h-2 rounded-full shadow-[0_0_8px] transition-all duration-700 ${!taskStatus || taskStatus === 'todo' ? 'bg-zinc-400 shadow-zinc-400/80 ring-2 ring-zinc-400/20' : 'bg-zinc-800'}`} />
+
+                                            {/* IN PROGRESS */}
+                                            <div className={`w-2 h-2 rounded-full shadow-[0_0_8px] transition-all duration-700 ${taskStatus === 'in_progress' ? 'bg-blue-400 shadow-blue-400/80 ring-2 ring-blue-400/20 animate-pulse' : 'bg-zinc-800'}`} />
+
+                                            {/* REVIEW (Middle-Right) - NEW */}
+                                            <div className={`w-2 h-2 rounded-full shadow-[0_0_8px] transition-all duration-700 ${taskStatus === 'review' ? 'bg-purple-500 shadow-purple-500/80 ring-2 ring-purple-500/20 animate-pulse' : 'bg-zinc-800'}`} />
+
+                                            {/* DONE (or REVISION if failed) */}
+                                            <div className={`w-2 h-2 rounded-full shadow-[0_0_8px] transition-all duration-700 
+                                                ${taskStatus === 'done' ? 'bg-emerald-400 shadow-emerald-400/80 ring-2 ring-emerald-400/20' :
+                                                    taskStatus === 'revision' ? 'bg-amber-500 shadow-amber-500/80 ring-2 ring-amber-500/20 animate-bounce' : 'bg-zinc-800'}`}
+                                            />
+                                        </div>
+                                        <span className={`text-[9px] font-black uppercase tracking-wider ml-1 
+                                            ${taskStatus === 'done' ? 'text-emerald-400' :
+                                                taskStatus === 'in_progress' ? 'text-blue-400' :
+                                                    taskStatus === 'review' ? 'text-purple-400' :
+                                                        taskStatus === 'revision' ? 'text-amber-500' :
+                                                            'text-zinc-500'}`}>
+                                            {taskStatus === 'done' ? 'COMPLETED' :
+                                                taskStatus === 'in_progress' ? 'ON AIR' :
+                                                    taskStatus === 'review' ? 'IN REVIEW' :
+                                                        taskStatus === 'revision' ? `REVISION ${msg.linkedTask?.revisionCount ? `#${msg.linkedTask.revisionCount}` : ''}` :
+                                                            'QUEUED'}
+                                        </span>
+                                    </div>
+                                )}
+                                <span className="text-[10px] font-mono font-black tracking-tighter text-white">{time}</span>
+                                {isMe && (
+                                    <div className="flex items-center gap-0.5">
+                                        <Check size={12} strokeWidth={3} className={isTask && taskStatus === 'done' ? 'text-emerald-400' : 'text-zinc-500'} />
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Dropdown Arrow (New Premium Version) */}
+                        <button
+                            onClick={(e) => { e.stopPropagation(); (window as any).dispatchEvent(new CustomEvent('open-msg-menu', { detail: { event: e, msg } })); }}
+                            className="absolute top-0 right-0 p-1.5 opacity-0 group-hover:opacity-100 transition-opacity bg-white/5 hover:bg-white/10 rounded-bl-xl border-l border-b border-white/5"
+                        >
+                            <MoreHorizontal size={12} className="text-white/60" />
+                        </button>
+                    </div>
+                </div>
+            </motion.div>
+        );
+    };
+
+    const isTask = msg.linkedTaskId || msg.taskStatus || msg.content.includes('!task');
+
+    // DEBUG: Force a background color for testing
+    const debugStyle = { border: '2px solid rgba(255,255,255,0.05)' };
+
+    if (isActivityLog) {
+        return renderActivityLogUI();
     }
 
     if (isBot) {
-        return (
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="flex flex-col items-center w-full my-6 px-10 relative group">
-                <div className={`w-full max-w-xl rounded-2xl overflow-hidden border transition-all ${isP1 ? 'bg-rose-500/10 border-rose-500/30' : 'bg-zinc-900 border-white/10 shadow-xl'}`}>
-                    <div className={`px-4 py-2 border-b flex items-center justify-between ${isP1 ? 'bg-rose-500/10 border-rose-500/20' : 'bg-black/20 border-white/5'}`}>
-                        <div className="flex items-center gap-2">
-                            <div className={`p-1.5 rounded-lg ${isP1 ? 'bg-rose-500/20 text-rose-400' : 'bg-indigo-500/20 text-indigo-400'}`}>{isP1 ? <Zap size={14} fill="currentColor" /> : <Bot size={14} />}</div>
-                            <div className="flex flex-col">
-                                <span className={`text-[10px] font-black uppercase tracking-wider ${isP1 ? 'text-rose-400' : (displaySender.fullName?.startsWith('@') ? 'text-indigo-400' : 'text-zinc-500')}`}>
-                                    {isP1 ? 'Critical Priority' : (displaySender.fullName?.startsWith('@') ? 'AI Squad Operator' : 'System Notification')}
-                                </span>
-                                <span className="text-xs font-bold text-white">{displaySender.fullName}</span>
-                            </div>
-                        </div>
-                        <span className="text-[10px] text-zinc-500 font-mono">{time}</span>
-                    </div>
-                    <div className="p-4 text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap select-text selection:bg-rose-500/30">{renderContent(msg.content)}</div>
-                </div>
-            </motion.div>
-        );
+        return renderBotUI();
+    }
+
+    if (USE_GLASS_MESSAGES) {
+        return renderUserMessageUI();
     }
 
     // Standard Message
@@ -222,14 +494,33 @@ const MessageItem: React.FC<MessageItemProps> = ({
                             {/* Media */}
                             {msg.mediaUrl && (
                                 <div className="mb-2 mt-1">
-                                    {msg.mediaType === 'video' ?
+                                    {msg.mediaType === 'video' || (msg.mediaUrl.match(/\.(mp4|webm|ogg)$/i)) ?
                                         <video src={msg.mediaUrl} controls className="max-w-full rounded-lg" /> :
-                                        <img
-                                            src={msg.thumbnailUrl || msg.mediaUrl}
-                                            alt="Attachment"
-                                            className="max-w-full rounded-lg cursor-pointer"
-                                            onClick={() => onLightbox(msg.mediaUrl || null)}
-                                        />
+                                        (msg.mediaType === 'image' || msg.mediaUrl.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i)) ?
+                                            <img
+                                                src={msg.thumbnailUrl || msg.mediaUrl}
+                                                alt="Attachment"
+                                                className="max-w-full rounded-lg cursor-pointer"
+                                                onClick={() => onLightbox(msg.mediaUrl || null)}
+                                            /> :
+                                            <a
+                                                href={msg.mediaUrl}
+                                                download
+                                                className="flex items-center gap-3 p-3 rounded-lg bg-black/20 border border-white/10 hover:bg-black/40 transition-all group/doc"
+                                                onClick={(e) => e.stopPropagation()}
+                                            >
+                                                <div className="p-2 rounded bg-emerald-500/20 text-emerald-500 group-hover/doc:bg-emerald-500/30 transition-colors">
+                                                    <Layout size={20} />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="text-xs font-bold text-white truncate">
+                                                        {msg.mediaUrl.split('/').pop()?.split('-').slice(1).join('-') || 'Document'}
+                                                    </div>
+                                                    <div className="text-[10px] text-zinc-500 uppercase font-mono mt-0.5">
+                                                        {msg.mediaUrl.split('.').pop()?.toUpperCase()} File
+                                                    </div>
+                                                </div>
+                                            </a>
                                     }
                                 </div>
                             )}

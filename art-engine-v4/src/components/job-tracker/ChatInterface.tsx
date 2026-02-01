@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, Plus, Trash2, Edit2, X, Check, Bot, ListTodo, ArrowLeft, ArrowRight, MoreHorizontal, Shield, Terminal, Layout, Zap, AlertCircle, Copy, Reply as ReplyIcon, Forward as ForwardIcon, CheckCircle2, Minimize2, ChevronDown, CheckCheck } from 'lucide-react';
+import { Send, Plus, Trash2, Edit2, X, Check, Bot, ListTodo, ArrowLeft, ArrowRight, MoreHorizontal, Shield, Terminal, Layout, Zap, AlertCircle, Copy, Reply as ReplyIcon, Forward as ForwardIcon, CheckCircle2, Minimize2, ChevronDown, CheckCheck, Download } from 'lucide-react';
 import { useStore, ChatMessage } from '@/lib/store';
 import api from '@/lib/api';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
@@ -115,6 +115,8 @@ export default function ChatInterface({
 
     const handleUpload = async (file: File) => {
         const formData = new FormData();
+        if (chat.activeChannelId) formData.append('channelId', chat.activeChannelId.toString());
+        if (auth.user?.id) formData.append('userId', auth.user.id.toString());
         formData.append('file', file);
 
         const res = await api.post('/upload', formData, {
@@ -215,6 +217,13 @@ export default function ChatInterface({
             console.log('Message Deleted:', payload);
             if (String(payload.channelId) === String(useStore.getState().chat.activeChannelId)) {
                 chat.removeMessage(Number(payload.channelId), Number(payload.messageId));
+            }
+        });
+
+        socket.on('message_updated', (msg: any) => {
+            console.log('WS Message Updated:', msg);
+            if (msg.channel && msg.channel.id) {
+                chat.updateMessage(Number(msg.channel.id), msg as ChatMessage);
             }
         });
 
@@ -645,6 +654,22 @@ export default function ChatInterface({
                     <button onClick={() => { navigator.clipboard.writeText(contextMenu.msg.content); setContextMenu(null); }} className="w-full text-left px-4 py-2 hover:bg-[#111b21] text-[#d1d7db] text-sm flex items-center gap-3">
                         <Layout size={16} /> Copy
                     </button>
+
+                    {/* Download Attachment */}
+                    {contextMenu.msg.mediaUrl && (
+                        <button onClick={() => {
+                            const link = document.createElement('a');
+                            link.href = contextMenu.msg.mediaUrl || '';
+                            link.target = '_blank';
+                            link.download = contextMenu.msg.mediaUrl?.split('/').pop() || 'download';
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                            setContextMenu(null);
+                        }} className="w-full text-left px-4 py-2 hover:bg-[#111b21] text-[#d1d7db] text-sm flex items-center gap-3">
+                            <Download size={16} /> Download
+                        </button>
+                    )}
 
                     {/* Owner Actions */}
                     {auth.user?.id === contextMenu.msg.sender?.id && (

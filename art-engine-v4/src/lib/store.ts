@@ -58,6 +58,7 @@ export interface ChatState {
     removeMessage: (channelId: number, messageId: number) => void;
     lastRefreshAt: number; // Global refresh trigger
     refreshChannels: () => void;
+    updateMessage: (channelId: number, message: ChatMessage) => void;
 }
 
 export interface User {
@@ -205,6 +206,15 @@ export const useStore = create<AppState>()(
                 lastRefreshAt: 0,
                 refreshChannels: () => set((state) => ({
                     chat: { ...state.chat, lastRefreshAt: Date.now() }
+                })),
+                updateMessage: (channelId, message) => set((state) => ({
+                    chat: {
+                        ...state.chat,
+                        messages: {
+                            ...state.chat.messages,
+                            [channelId]: (state.chat.messages[channelId] || []).map(m => m.id === message.id ? message : m)
+                        }
+                    }
                 }))
             },
 

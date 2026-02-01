@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Plus, Filter, MessageSquare, CheckCircle, CheckCircle2, Check, Clock, AlertCircle, ArrowLeft, Send, RefreshCw, Play, AlertOctagon, XCircle, Trash2, User, Sparkles, X, ChevronDown, LogOut, Settings, LayoutGrid, List, MoreHorizontal, Grid3X3, Columns, Layout, Menu, PanelLeftClose, Minimize2, Maximize2, Zap, Shield, Users, Lock, Activity } from 'lucide-react';
+import { Search, Plus, Filter, MessageSquare, CheckCircle, CheckCircle2, Check, Clock, AlertCircle, ArrowLeft, Send, RefreshCw, Play, AlertOctagon, XCircle, Trash2, User, Sparkles, X, ChevronDown, LogOut, Settings, LayoutGrid, List, MoreHorizontal, Grid3X3, Columns, Layout, Menu, PanelLeftClose, Minimize2, Maximize2, Zap, Shield, Users, Lock, Activity, RotateCcw, Layers } from 'lucide-react';
 import { io } from 'socket.io-client';
 import { getSocketUrl } from '@/lib/config';
 import ChatInterface from '@/components/job-tracker/ChatInterface';
@@ -15,6 +15,8 @@ import { useRouter } from 'next/navigation';
 import { LiveTicker } from '../components/job-tracker/LiveTicker';
 import { GroupDiscoveryModal } from '@/components/job-tracker/GroupDiscoveryModal';
 import { LiveStatusModal } from '@/components/job-tracker/LiveStatusModal';
+import { UnifiedAssetsBoard } from '../components/job-tracker/UnifiedAssetsBoard';
+import { RevisionRequestModal } from '@/components/job-tracker/RevisionRequestModal';
 
 interface JobTrackerProps {
     onExit?: () => void;
@@ -46,6 +48,8 @@ interface Task {
     category: string;
     metadata?: any;
     channelId?: number;
+    revisionCount?: number;
+    revisions?: any[]; // Simplified for frontend
 }
 
 
@@ -66,7 +70,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
     const [filterDept, setFilterDept] = useState<string>('all'); // NEW: Dept Filter
     const [sortBy, setSortBy] = useState<'priority' | 'group' | 'newest'>('priority'); // NEW: Sort State
     const [viewMode, setViewMode] = useState<'board' | 'list' | 'grid'>('board'); // NEW: View Mode
-    const [activeTab, setActiveTab] = useState<'tasks' | 'stats'>('tasks');
+    const [activeTab, setActiveTab] = useState<'tasks' | 'stats' | 'assets'>('tasks');
     const [isDiscoveryOpen, setIsDiscoveryOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [archiveDate, setArchiveDate] = useState(new Date());
@@ -87,14 +91,15 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
     const [showMatrix, setShowMatrix] = useState(false);
     const [highlightMessageId, setHighlightMessageId] = useState<number | null>(null);
 
-    // Quick Action State: { taskId, type: 'ask' | 'reject', content: '' }
-    const [quickAction, setQuickAction] = useState<{ taskId: number; type: 'ask' | 'reject', content: string } | null>(null);
+    // Quick Action State: { taskId, type: 'ask' | 'reject' | 'revision', content: '' }
+    const [quickAction, setQuickAction] = useState<{ taskId: number; type: 'ask' | 'reject' | 'revision', content: string } | null>(null);
 
     const [isLiveStatusOpen, setIsLiveStatusOpen] = useState(false);
 
     // Mobile State
     const [mobileTab, setMobileTab] = useState<'tasks' | 'chat' | 'stats'>('tasks');
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024; // Simple check
+    const [detailTab, setDetailTab] = useState<'details' | 'revisions'>('details');
 
     const handleAskQuestion = async () => {
         if (!selectedTask) return;
@@ -268,6 +273,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
             });
 
             socket.on('task_created', (newTask: any) => {
+                console.log('[WS] Task Created:', newTask.id);
                 const mappedTask = {
                     id: newTask.id,
                     title: newTask.title,
@@ -291,8 +297,9 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
             });
 
             socket.on('task_updated', (updatedTask: any) => {
+                console.log('[WS] Task Updated:', updatedTask.id, updatedTask.status);
                 setTasks(prev => prev.map(t => {
-                    if (t.id === updatedTask.id) {
+                    if (String(t.id) === String(updatedTask.id)) {
                         return {
                             ...t,
                             title: updatedTask.title,
@@ -308,7 +315,8 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                             completedAt: updatedTask.completedAt,
                             score: updatedTask.score || 0,
                             category: updatedTask.category || 'Uncategorized',
-                            metadata: updatedTask.metadata
+                            metadata: updatedTask.metadata,
+                            updatedAt: updatedTask.updatedAt // Ensure updatedAt is synced
                         };
                     }
                     return t;
@@ -316,7 +324,8 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
             });
 
             socket.on('task_deleted', ({ id }: { id: number }) => {
-                setTasks(prev => prev.filter(t => t.id !== id));
+                console.log('[WS] Task Deleted:', id);
+                setTasks(prev => prev.filter(t => String(t.id) !== String(id)));
             });
 
             // Keep a slower poll just for auth/token sync if needed, or rely on other mechanisms
@@ -950,6 +959,12 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                             >
                                                 Stats
                                             </button>
+                                            <button
+                                                onClick={() => setActiveTab('assets')}
+                                                className={`px-3 py-1 rounded text-[10px] font-bold uppercase transition-colors ${activeTab === 'assets' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                                            >
+                                                Assets
+                                            </button>
                                         </div>
                                     </div>
 
@@ -1349,6 +1364,92 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                 </div>
                             )}
 
+                            {/* QUICK ACTION OVERLAY (Modal) */}
+                            {quickAction && (
+                                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+                                    <motion.div
+                                        initial={{ opacity: 0, scale: 0.9 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        className="bg-zinc-900 border border-white/10 rounded-xl p-6 w-full max-w-sm shadow-2xl relative"
+                                    >
+                                        <h3 className="text-lg font-bold text-white mb-1">
+                                            {quickAction.type === 'ask' ? 'Ask Question' :
+                                                quickAction.type === 'revision' ? 'Request Revision' :
+                                                    'Reject Task'}
+                                        </h3>
+                                        <p className="text-sm text-zinc-400 mb-4">
+                                            {quickAction.type === 'ask' ? 'Post a question to the channel.' :
+                                                quickAction.type === 'revision' ? 'Explain what needs to be changed. This will open a private chat with the owner.' :
+                                                    'Provide a reason for rejection.'}
+                                        </p>
+
+                                        <textarea
+                                            autoFocus
+                                            className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-sm text-white focus:outline-none focus:border-indigo-500/50 min-h-[100px] resize-none mb-4"
+                                            placeholder={quickAction.type === 'ask' ? "What's your question?" : "Describe required changes..."}
+                                            value={quickAction.content}
+                                            onChange={e => setQuickAction({ ...quickAction, content: e.target.value })}
+                                            onKeyDown={e => {
+                                                if (e.key === 'Enter' && !e.shiftKey) {
+                                                    e.preventDefault();
+                                                    // Trigger Submit
+                                                    const btn = document.getElementById('quick-action-submit');
+                                                    if (btn) btn.click();
+                                                }
+                                            }}
+                                        />
+
+                                        <div className="flex justify-end gap-3">
+                                            <button
+                                                onClick={() => setQuickAction(null)}
+                                                className="px-4 py-2 text-sm font-bold text-zinc-400 hover:text-white transition-colors"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                id="quick-action-submit"
+                                                onClick={() => {
+                                                    if (!quickAction.content.trim()) return;
+
+                                                    if (quickAction.type === 'ask') {
+                                                        const task = tasks.find(t => t.id === quickAction.taskId);
+                                                        const deptChannel = chat.channels.find(c => c.name.toLowerCase() === task?.dept?.toLowerCase());
+                                                        const targetChannelId = deptChannel ? deptChannel.id : (chat.activeChannelId || chat.channels[0]?.id);
+                                                        if (targetChannelId) {
+                                                            api.post(`/channels/${targetChannelId}/messages`, { content: `@${task?.requester} [Task #${task?.id}] ${quickAction.content}` })
+                                                                .then(() => setQuickAction(null));
+                                                        }
+                                                    } else if (quickAction.type === 'revision') {
+                                                        api.post(`/tasks/${quickAction.taskId}/request-revision`, { reason: quickAction.content })
+                                                            .then((res: any) => {
+                                                                loadTasks(); // Refresh list to show new status
+                                                                setQuickAction(null);
+                                                                // TODO: Navigate to new Channel?
+                                                                if (res.data?.revisionChannelId) {
+                                                                    useStore.getState().chat.setActiveChannel(res.data.revisionChannelId);
+                                                                    setIsChatCollapsed(false);
+                                                                }
+                                                            })
+                                                            .catch(err => console.error(err));
+                                                    } else {
+                                                        api.patch(`/tasks/${quickAction.taskId}`, { status: 'rejected', comment: quickAction.content })
+                                                            .then(loadTasks)
+                                                            .finally(() => setQuickAction(null));
+                                                    }
+                                                }}
+                                                className={`px-4 py-2 text-sm font-bold text-white rounded-lg shadow-lg flex items-center gap-2 ${quickAction.type === 'ask' ? 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-500/20' :
+                                                    quickAction.type === 'revision' ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-500/20' :
+                                                        'bg-red-600 hover:bg-red-500 shadow-red-500/20'
+                                                    }`}
+                                            >
+                                                {quickAction.type === 'ask' ? <Send size={14} /> : quickAction.type === 'revision' ? <RefreshCw size={14} /> : <XCircle size={14} />}
+                                                {quickAction.type === 'ask' ? 'Send' : quickAction.type === 'revision' ? 'Request Revision' : 'Reject'}
+                                            </button>
+                                        </div>
+                                    </motion.div>
+                                </div>
+                            )}
+
                             {/* BULK ACTION BAR */}
                             {(!isMobile || mobileTab === 'tasks') && (
                                 <AnimatePresence>
@@ -1397,6 +1498,8 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                             <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar">
                                 {(activeTab === 'stats' || mobileTab === 'stats') ? (
                                     <Stats tasks={tasks} />
+                                ) : activeTab === 'assets' ? (
+                                    <UnifiedAssetsBoard />
                                 ) : viewMode === 'board' ? (
                                     <div className="flex flex-col xl:flex-row h-fit xl:h-full gap-6 w-full p-6">
                                         {/* KANBAN COLUMNS */}
@@ -1406,319 +1509,320 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                             { id: 'done', label: 'Archived', color: 'border-emerald-500' },
                                         ]
                                             .filter(col => filterStatus === 'all' || col.id === filterStatus)
-                                            .map(col => (
-                                                <div key={col.id} className={`flex-1 min-w-[300px] shrink-0 flex flex-col bg-zinc-900/20 rounded-xl border border-white/5 h-[800px] xl:h-full transition-all duration-300`}>
-                                                    {/* Column Header */}
-                                                    <div className={`p-4 border-b border-white/5 flex items-center justify-between sticky top-0 bg-zinc-950/80 backdrop-blur-sm z-10 rounded-t-xl border-t-2 ${col.color}`}>
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="font-display font-black text-sm text-zinc-300 uppercase tracking-widest">{col.label}</span>
-                                                            <span className="bg-zinc-800 text-zinc-400 text-xs font-bold px-2 py-0.5 rounded-full">
-                                                                {col.id === 'done' && !searchQuery
-                                                                    ? filteredTasks.filter(t => (t.status === 'done' || t.status === 'rejected') && new Date(t.updatedAt).toLocaleDateString() === archiveDate.toLocaleDateString()).length
-                                                                    : filteredTasks.filter(t => t.status === col.id).length}
-                                                            </span>
+                                            .map(col => {
+                                                // Column Filter Logic
+                                                const colTasks = filteredTasks.filter(t => {
+                                                    if (col.id === 'todo') return t.status === 'todo' || t.status === 'review' || t.status === 'revision';
+                                                    if (col.id === 'in_progress') return t.status === 'in_progress';
+                                                    if (col.id === 'done') {
+                                                        const isDoneDate = new Date(t.updatedAt).toLocaleDateString() === archiveDate.toLocaleDateString();
+                                                        return (t.status === 'done' || t.status === 'rejected') && (!searchQuery ? isDoneDate : true);
+                                                    }
+                                                    return false;
+                                                });
+
+                                                return (
+                                                    <div key={col.id} className={`flex-1 min-w-[300px] shrink-0 flex flex-col bg-zinc-900/20 rounded-xl border border-white/5 h-[800px] xl:h-full transition-all duration-300`}>
+                                                        {/* Column Header */}
+                                                        <div className={`p-4 border-b border-white/5 flex items-center justify-between sticky top-0 bg-zinc-950/80 backdrop-blur-sm z-10 rounded-t-xl border-t-2 ${col.color}`}>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="font-display font-black text-sm text-zinc-300 uppercase tracking-widest">{col.label}</span>
+                                                                <span className="bg-zinc-800 text-zinc-400 text-xs font-bold px-2 py-0.5 rounded-full">
+                                                                    {colTasks.length}
+                                                                </span>
+                                                            </div>
+
+                                                            {col.id === 'done' && (
+                                                                <div className="flex gap-1">
+                                                                    {/* Date Navigation (Moved Here for Board View) */}
+                                                                    <div className="flex items-center bg-zinc-800 rounded-md mr-2 relative">
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                const d = new Date(archiveDate);
+                                                                                d.setDate(d.getDate() - 1);
+                                                                                setArchiveDate(d);
+                                                                            }}
+                                                                            className="p-1 hover:text-white text-zinc-400"
+                                                                        >
+                                                                            <ArrowLeft size={12} />
+                                                                        </button>
+
+                                                                        {/* Clickable Date Display */}
+                                                                        <div className="relative flex items-center">
+                                                                            <span className="text-[10px] font-bold px-1 min-w-[70px] text-center pointer-events-none">
+                                                                                {archiveDate.toLocaleDateString() === new Date().toLocaleDateString() ? 'TODAY' : archiveDate.toLocaleDateString()}
+                                                                            </span>
+                                                                            <input
+                                                                                type="date"
+                                                                                value={archiveDate.toISOString().split('T')[0]}
+                                                                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                                                                onChange={(e) => {
+                                                                                    if (e.target.valueAsDate) setArchiveDate(e.target.valueAsDate);
+                                                                                }}
+                                                                            />
+                                                                        </div>
+
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                const d = new Date(archiveDate);
+                                                                                d.setDate(d.getDate() + 1);
+                                                                                setArchiveDate(d);
+                                                                            }}
+                                                                            className="p-1 hover:text-white text-zinc-400"
+                                                                        >
+                                                                            <Play size={12} className="rotate-0" />
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            )}
                                                         </div>
 
-                                                        {col.id === 'done' && (
-                                                            <div className="flex gap-1">
-                                                                {/* Date Navigation (Moved Here for Board View) */}
-                                                                <div className="flex items-center bg-zinc-800 rounded-md mr-2 relative">
-                                                                    <button
-                                                                        onClick={() => {
-                                                                            const d = new Date(archiveDate);
-                                                                            d.setDate(d.getDate() - 1);
-                                                                            setArchiveDate(d);
-                                                                        }}
-                                                                        className="p-1 hover:text-white text-zinc-400"
-                                                                    >
-                                                                        <ArrowLeft size={12} />
-                                                                    </button>
-
-                                                                    {/* Clickable Date Display */}
-                                                                    <div className="relative flex items-center">
-                                                                        <span className="text-[10px] font-bold px-1 min-w-[70px] text-center pointer-events-none">
-                                                                            {archiveDate.toLocaleDateString() === new Date().toLocaleDateString() ? 'TODAY' : archiveDate.toLocaleDateString()}
-                                                                        </span>
-                                                                        <input
-                                                                            type="date"
-                                                                            value={archiveDate.toISOString().split('T')[0]}
-                                                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                                                                            onChange={(e) => {
-                                                                                if (e.target.valueAsDate) setArchiveDate(e.target.valueAsDate);
-                                                                            }}
-                                                                        />
+                                                        {/* Cards Container */}
+                                                        <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
+                                                            {colTasks.length === 0 ? (
+                                                                <div className="h-full flex flex-col items-center justify-center text-zinc-600 gap-3 opacity-50 select-none">
+                                                                    <div className="w-16 h-16 rounded-full bg-zinc-800/50 flex items-center justify-center">
+                                                                        {col.id === 'todo' ? <List size={24} /> :
+                                                                            col.id === 'in_progress' ? <Zap size={24} /> :
+                                                                                <CheckCircle size={24} />}
                                                                     </div>
-
-                                                                    <button
-                                                                        onClick={() => {
-                                                                            const d = new Date(archiveDate);
-                                                                            d.setDate(d.getDate() + 1);
-                                                                            setArchiveDate(d);
-                                                                        }}
-                                                                        className="p-1 hover:text-white text-zinc-400"
-                                                                    >
-                                                                        <Play size={12} className="rotate-0" />
-                                                                    </button>
+                                                                    <span className="text-xs font-bold uppercase tracking-widest">No Tasks</span>
                                                                 </div>
-                                                            </div>
-                                                        )}
-                                                    </div>
+                                                            ) : (
+                                                                colTasks
+                                                                    .sort((a, b) => {
+                                                                        // 1. Group Logic
+                                                                        if (sortBy === 'group') {
+                                                                            const deptA = a.dept || 'ZZZ'; // General last
+                                                                            const deptB = b.dept || 'ZZZ';
+                                                                            if (deptA !== deptB) return deptA.localeCompare(deptB);
+                                                                        }
 
-                                                    {/* Cards Container */}
-                                                    <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
-                                                        {filteredTasks.filter(t => t.status === col.id).length === 0 ? (
-                                                            <div className="h-full flex flex-col items-center justify-center text-zinc-600 gap-3 opacity-50 select-none">
-                                                                <div className="w-16 h-16 rounded-full bg-zinc-800/50 flex items-center justify-center">
-                                                                    {col.id === 'todo' ? <List size={24} /> :
-                                                                        col.id === 'in_progress' ? <Zap size={24} /> :
-                                                                            <CheckCircle size={24} />}
-                                                                </div>
-                                                                <span className="text-xs font-bold uppercase tracking-widest">No Tasks</span>
-                                                            </div>
-                                                        ) : (
-                                                            filteredTasks.filter(t => t.status === col.id)
-                                                                .sort((a, b) => {
-                                                                    // 1. Group Logic
-                                                                    if (sortBy === 'group') {
-                                                                        const deptA = a.dept || 'ZZZ'; // General last
-                                                                        const deptB = b.dept || 'ZZZ';
-                                                                        if (deptA !== deptB) return deptA.localeCompare(deptB);
-                                                                    }
+                                                                        // 2. Priority Logic
+                                                                        if (sortBy === 'priority' || sortBy === 'group') {
+                                                                            const pMap: Record<string, number> = { 'P1': 3, 'P2': 2, 'P3': 1 };
+                                                                            const pDiff = (pMap[b.priority] || 0) - (pMap[a.priority] || 0);
+                                                                            if (pDiff !== 0) return pDiff;
+                                                                        }
 
-                                                                    // 2. Priority Logic
-                                                                    if (sortBy === 'priority' || sortBy === 'group') {
-                                                                        const pMap: Record<string, number> = { 'P1': 3, 'P2': 2, 'P3': 1 };
-                                                                        const pDiff = (pMap[b.priority] || 0) - (pMap[a.priority] || 0);
-                                                                        if (pDiff !== 0) return pDiff;
-                                                                    }
+                                                                        // 3. Newest First
+                                                                        return b.id - a.id;
+                                                                    })
+                                                                    .map(task => {
+                                                                        // ... (Existing Task Card Logic) ...
+                                                                        // To keep this replacement clean, I'll invoke the 'renderTaskCard' function logic inline or assume it is handled.
+                                                                        // Since I cannot call functions inside JSX cleanly without defining them, I will paste the card logic here. 
+                                                                        // However, to save tokens and ensure correctness based on previous edits, I will copy the PREVIOUS card logic.
 
-                                                                    // 3. Newest First
-                                                                    return b.id - a.id;
-                                                                })
-                                                                .map(task => {
-                                                                    // ... (Existing Task Card Logic) ...
-                                                                    // To keep this replacement clean, I'll invoke the 'renderTaskCard' function logic inline or assume it is handled.
-                                                                    // Since I cannot call functions inside JSX cleanly without defining them, I will paste the card logic here. 
-                                                                    // However, to save tokens and ensure correctness based on previous edits, I will copy the PREVIOUS card logic.
+                                                                        // --- VISUAL DESIGN (Copied from previous step) ---
+                                                                        let cardStyle = 'bg-[#09090b] border-zinc-800/50 hover:border-zinc-700 transition-all';
+                                                                        if (task.priority === 'P1' && task.status !== 'done' && task.status !== 'rejected') {
+                                                                            cardStyle += ' shadow-[0_0_15px_-5px_rgba(239,68,68,0.15)] border-red-900/30';
+                                                                        } else if (task.priority === 'P2' && task.status !== 'done') {
+                                                                            cardStyle += ' border-orange-900/30';
+                                                                        }
+                                                                        const groupColorHsl = generateGroupColor(task.dept || 'General', 'bg').match(/hsl\([^)]+\)/)?.[0] || '#52525b';
+                                                                        const isSelected = selectedTaskIds.has(task.id);
+                                                                        const isMyRequest = auth.user && task.requester === auth.user.fullName;
 
-                                                                    // --- VISUAL DESIGN (Copied from previous step) ---
-                                                                    let cardStyle = 'bg-[#09090b] border-zinc-800/50 hover:border-zinc-700 transition-all';
-                                                                    if (task.priority === 'P1' && task.status !== 'done' && task.status !== 'rejected') {
-                                                                        cardStyle += ' shadow-[0_0_15px_-5px_rgba(239,68,68,0.15)] border-red-900/30';
-                                                                    } else if (task.priority === 'P2' && task.status !== 'done') {
-                                                                        cardStyle += ' border-orange-900/30';
-                                                                    }
-                                                                    const groupColorHsl = generateGroupColor(task.dept || 'General', 'bg').match(/hsl\([^)]+\)/)?.[0] || '#52525b';
-                                                                    const isSelected = selectedTaskIds.has(task.id);
-                                                                    const isMyRequest = auth.user && task.requester === auth.user.fullName;
-
-                                                                    return (
-                                                                        <motion.div
-                                                                            layout
-                                                                            initial={{ opacity: 0, scale: 0.98 }}
-                                                                            animate={{ opacity: 1, scale: 1 }}
-                                                                            exit={{ opacity: 0, scale: 0.98 }}
-                                                                            key={task.id}
-                                                                            onClick={(e: any) => {
-                                                                                if (isSelectionMode || e.ctrlKey || e.metaKey || e.shiftKey) {
-                                                                                    e.stopPropagation();
-                                                                                    if (!isSelectionMode) setIsSelectionMode(true);
-                                                                                    toggleTaskSelection(task.id);
-                                                                                } else {
-                                                                                    setSelectedTask(task);
-                                                                                }
-                                                                            }}
-                                                                            className={`relative rounded-xl border overflow-hidden cursor-pointer group hover:-translate-y-0.5 ${cardStyle} ${isSelected ? 'ring-2 ring-emerald-500 bg-zinc-800' : ''} ${isMyRequest ? 'bg-blue-500/5' : 'bg-zinc-900'}`}
-                                                                            style={{
-                                                                                borderColor: isMyRequest ? undefined : (isSelected ? undefined : 'rgba(255,255,255,0.05)')
-                                                                            }}
-                                                                        >
-                                                                            <div className="absolute left-0 top-0 bottom-0 w-[3px] z-10" style={{ backgroundColor: groupColorHsl }} />
-                                                                            {isSelectionMode && (
-                                                                                <div className="absolute top-2 right-2 z-20">
-                                                                                    <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${isSelected ? 'bg-emerald-500 border-emerald-500' : 'bg-black/60 border-white/30'}`}>
-                                                                                        {isSelected && <CheckCircle2 size={12} className="text-black" />}
+                                                                        return (
+                                                                            <motion.div
+                                                                                layout
+                                                                                initial={{ opacity: 0, scale: 0.98 }}
+                                                                                animate={{ opacity: 1, scale: 1 }}
+                                                                                exit={{ opacity: 0, scale: 0.98 }}
+                                                                                key={task.id}
+                                                                                onClick={(e: any) => {
+                                                                                    if (isSelectionMode || e.ctrlKey || e.metaKey || e.shiftKey) {
+                                                                                        e.stopPropagation();
+                                                                                        if (!isSelectionMode) setIsSelectionMode(true);
+                                                                                        toggleTaskSelection(task.id);
+                                                                                    } else {
+                                                                                        setSelectedTask(task);
+                                                                                    }
+                                                                                }}
+                                                                                className={`relative rounded-xl border overflow-hidden cursor-pointer group hover:-translate-y-0.5 ${cardStyle} ${isSelected ? 'ring-2 ring-emerald-500 bg-zinc-800' : ''} ${isMyRequest ? 'bg-blue-500/5' : 'bg-zinc-900'}`}
+                                                                                style={{
+                                                                                    borderColor: isMyRequest ? undefined : (isSelected ? undefined : 'rgba(255,255,255,0.05)')
+                                                                                }}
+                                                                            >
+                                                                                <div className="absolute left-0 top-0 bottom-0 w-[3px] z-10" style={{ backgroundColor: groupColorHsl }} />
+                                                                                {isSelectionMode && (
+                                                                                    <div className="absolute top-2 right-2 z-20">
+                                                                                        <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${isSelected ? 'bg-emerald-500 border-emerald-500' : 'bg-black/60 border-white/30'}`}>
+                                                                                            {isSelected && <CheckCircle2 size={12} className="text-black" />}
+                                                                                        </div>
                                                                                     </div>
-                                                                                </div>
-                                                                            )}
-                                                                            <div className="p-3 pl-5 flex flex-col gap-2">
-                                                                                <div className="flex justify-between items-start gap-2">
-                                                                                    <div className="flex flex-wrap items-center gap-2">
-                                                                                        <span className="text-zinc-500 font-mono font-black text-[10px] opacity-70 tracking-tighter">#{task.id}</span>
-                                                                                        {task.priority && (
-                                                                                            <span className={`px-1.5 py-[1px] rounded-[4px] text-[9px] font-black border ${task.priority === 'P1' ? 'bg-red-500 text-white border-red-600 shadow-sm shadow-red-900/50' :
-                                                                                                task.priority === 'P2' ? 'bg-orange-500 text-white border-orange-600' :
-                                                                                                    'bg-zinc-800 text-zinc-400 border-zinc-700'
-                                                                                                }`}>{task.priority}</span>
-                                                                                        )}
-                                                                                        <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-[1px] rounded-[4px] text-zinc-900 border border-black/10 shadow-sm" style={{ backgroundColor: groupColorHsl }}>{task.dept}</span>
-                                                                                        {task.score > 0 && (
-                                                                                            <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-[1px] rounded-[4px] text-cyan-400 border border-cyan-500/30 bg-cyan-950/30 shadow-sm flex items-center gap-1">
-                                                                                                <span>⚡</span> {task.score}
-                                                                                            </span>
+                                                                                )}
+                                                                                <div className="p-3 pl-5 flex flex-col gap-2">
+                                                                                    <div className="flex justify-between items-start gap-2">
+                                                                                        <div className="flex flex-wrap items-center gap-2">
+                                                                                            <span className="text-zinc-500 font-mono font-black text-[10px] opacity-70 tracking-tighter">#{task.id}</span>
+                                                                                            {(task.revisionCount || 0) > 0 && (
+                                                                                                <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-[1px] rounded-[4px] text-amber-500 border border-amber-500/30 bg-amber-950/30 shadow-sm">
+                                                                                                    v{task.revisionCount}
+                                                                                                </span>
+                                                                                            )}
+                                                                                            {task.priority && (
+                                                                                                <span className={`px-1.5 py-[1px] rounded-[4px] text-[9px] font-black border ${task.priority === 'P1' ? 'bg-red-500 text-white border-red-600 shadow-sm shadow-red-900/50' :
+                                                                                                    task.priority === 'P2' ? 'bg-orange-500 text-white border-orange-600' :
+                                                                                                        'bg-zinc-800 text-zinc-400 border-zinc-700'
+                                                                                                    }`}>{task.priority}</span>
+                                                                                            )}
+                                                                                            <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-[1px] rounded-[4px] text-zinc-900 border border-black/10 shadow-sm" style={{ backgroundColor: groupColorHsl }}>{task.dept}</span>
+                                                                                            {task.score > 0 && (
+                                                                                                <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-[1px] rounded-[4px] text-cyan-400 border border-cyan-500/30 bg-cyan-950/30 shadow-sm flex items-center gap-1">
+                                                                                                    <span>⚡</span> {task.score}
+                                                                                                </span>
+                                                                                            )}
+                                                                                        </div>
+                                                                                        {task.imageUrl && (
+                                                                                            <div onClick={(e) => { e.stopPropagation(); setLightboxUrl(task.imageUrl || null); }} className="w-8 h-8 rounded bg-zinc-800 border border-white/10 overflow-hidden cursor-zoom-in hover:border-emerald-500 hover:scale-105 transition-all shadow-sm shrink-0">
+                                                                                                <img src={task.imageUrl} alt="img" className="w-full h-full object-cover opacity-80 hover:opacity-100" />
+                                                                                            </div>
                                                                                         )}
                                                                                     </div>
-                                                                                    {task.imageUrl && (
-                                                                                        <div onClick={(e) => { e.stopPropagation(); setLightboxUrl(task.imageUrl || null); }} className="w-8 h-8 rounded bg-zinc-800 border border-white/10 overflow-hidden cursor-zoom-in hover:border-emerald-500 hover:scale-105 transition-all shadow-sm shrink-0">
-                                                                                            <img src={task.imageUrl} alt="img" className="w-full h-full object-cover opacity-80 hover:opacity-100" />
+                                                                                    <h3 className="text-sm font-display font-black text-zinc-200 leading-snug group-hover:text-white transition-colors line-clamp-2 tracking-tight">{task.title}</h3>
+                                                                                    <div className="flex items-center justify-between mt-1">
+                                                                                        <div className="flex flex-col gap-1.5">
+                                                                                            {/* Requester */}
+                                                                                            <div className="flex items-center gap-1.5 opacity-60">
+                                                                                                <div className="w-3.5 h-3.5 rounded-full bg-zinc-800 border border-white/10 flex items-center justify-center text-[7px] text-zinc-400 font-black">R</div>
+                                                                                                <span className="text-[9px] font-bold text-zinc-400 truncate max-w-[100px] uppercase tracking-tight">
+                                                                                                    {isMyRequest ? <span className="text-blue-200 font-bold shadow-blue-500/20 drop-shadow-sm">You</span> : (task.requester || 'System')}
+                                                                                                </span>
+                                                                                            </div>
+                                                                                            {/* Owner */}
+                                                                                            <div className="flex items-center gap-1.5">
+                                                                                                <div className="w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold text-white shadow-sm ring-1 ring-white/10" style={{ backgroundColor: groupColorHsl }}>{task.owner ? task.owner[0] : '?'}</div>
+                                                                                                <span className={`text-[10px] font-black truncate max-w-[110px] uppercase tracking-wide ${task.status === 'done' ? 'text-emerald-400' : (task.owner === 'Unknown' ? 'text-zinc-600' : 'text-zinc-300')}`}>
+                                                                                                    {task.status === 'done' ? `Done by ${task.owner}` : (task.owner === 'Unknown' ? 'Pool' : task.owner)}
+                                                                                                </span>
+                                                                                            </div>
                                                                                         </div>
-                                                                                    )}
-                                                                                </div>
-                                                                                <h3 className="text-sm font-display font-black text-zinc-200 leading-snug group-hover:text-white transition-colors line-clamp-2 tracking-tight">{task.title}</h3>
-                                                                                <div className="flex items-center justify-between mt-1">
-                                                                                    <div className="flex flex-col gap-1.5">
-                                                                                        {/* Requester */}
-                                                                                        <div className="flex items-center gap-1.5 opacity-60">
-                                                                                            <div className="w-3.5 h-3.5 rounded-full bg-zinc-800 border border-white/10 flex items-center justify-center text-[7px] text-zinc-400 font-black">R</div>
-                                                                                            <span className="text-[9px] font-bold text-zinc-400 truncate max-w-[100px] uppercase tracking-tight">
-                                                                                                {isMyRequest ? <span className="text-blue-200 font-bold shadow-blue-500/20 drop-shadow-sm">You</span> : (task.requester || 'System')}
-                                                                                            </span>
-                                                                                        </div>
-                                                                                        {/* Owner */}
-                                                                                        <div className="flex items-center gap-1.5">
-                                                                                            <div className="w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold text-white shadow-sm ring-1 ring-white/10" style={{ backgroundColor: groupColorHsl }}>{task.owner ? task.owner[0] : '?'}</div>
-                                                                                            <span className={`text-[10px] font-black truncate max-w-[110px] uppercase tracking-wide ${task.status === 'done' ? 'text-emerald-400' : (task.owner === 'Unknown' ? 'text-zinc-600' : 'text-zinc-300')}`}>
-                                                                                                {task.status === 'done' ? `Done by ${task.owner}` : (task.owner === 'Unknown' ? 'Pool' : task.owner)}
-                                                                                            </span>
-                                                                                        </div>
-                                                                                    </div>
-                                                                                    <div className="flex flex-col items-end gap-0.5">
-                                                                                        <span className={`text-[10px] font-bold ${task.due === 'Today' ? 'text-orange-400' : 'text-zinc-600'}`}>{task.due}</span>
+                                                                                        <div className="flex flex-col items-end gap-0.5">
+                                                                                            <span className={`text-[10px] font-bold ${task.due === 'Today' ? 'text-orange-400' : 'text-zinc-600'}`}>{task.due}</span>
 
-                                                                                        {/* Timing Metrics */}
-                                                                                        <div className="flex items-center gap-1.5 opacity-80 mt-1">
-                                                                                            <TaskTimerWidget
-                                                                                                status={task.status}
-                                                                                                createdAt={task.createdAt}
-                                                                                                startedAt={task.startedAt}
-                                                                                                completedAt={task.completedAt}
-                                                                                            />
+                                                                                            {/* Timing Metrics */}
+                                                                                            <div className="flex items-center gap-1.5 opacity-80 mt-1">
+                                                                                                <TaskTimerWidget
+                                                                                                    status={task.status}
+                                                                                                    createdAt={task.createdAt}
+                                                                                                    startedAt={task.startedAt}
+                                                                                                    completedAt={task.completedAt}
+                                                                                                />
+                                                                                            </div>
                                                                                         </div>
                                                                                     </div>
                                                                                 </div>
-                                                                            </div>
-                                                                            {/* Quick Actions Integration */}
-                                                                            {task.status !== 'done' && task.status !== 'rejected' && (
-                                                                                <div className="px-3 pb-3 pl-5 mt-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                                                                                    {quickAction?.taskId === task.id ? (
-                                                                                        // Quick Action Form (Simplified for brevity in list view logic copy)
-                                                                                        <div className="bg-zinc-900 rounded-lg p-2 border border-zinc-700 relative z-30">
-                                                                                            <textarea autoFocus className="w-full bg-black/50 text-xs text-white p-2 rounded border border-white/10 mb-2" rows={2} value={quickAction.content} onChange={e => setQuickAction({ ...quickAction, content: e.target.value })}
-                                                                                                onKeyDown={e => {
-                                                                                                    if (e.key === 'Enter' && !e.shiftKey) {
-                                                                                                        e.preventDefault();
-                                                                                                        if (quickAction.type === 'ask') {
-                                                                                                            const deptChannel = chat.channels.find(c => c.name.toLowerCase() === task.dept?.toLowerCase());
-                                                                                                            const targetChannelId = deptChannel ? deptChannel.id : (chat.activeChannelId || chat.channels[0]?.id);
-                                                                                                            if (targetChannelId && quickAction.content.trim()) api.post(`/channels/${targetChannelId}/messages`, { content: `@${task.requester} [Task #${task.id}] ${quickAction.content}` }).then(() => setQuickAction(null));
-                                                                                                        } else {
-                                                                                                            api.patch(`/tasks/${task.id}`, { status: 'rejected', comment: quickAction.content }).then(loadTasks).finally(() => setQuickAction(null));
+                                                                                {/* Quick Actions Integration */}
+                                                                                {task.status !== 'done' && task.status !== 'rejected' && (
+                                                                                    <div className="px-3 pb-3 pl-5 mt-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                                                                                        {quickAction?.taskId === task.id ? (
+                                                                                            // Quick Action Form (Simplified for brevity in list view logic copy)
+                                                                                            <div className="bg-zinc-900 rounded-lg p-2 border border-zinc-700 relative z-30">
+                                                                                                <textarea autoFocus className="w-full bg-black/50 text-xs text-white p-2 rounded border border-white/10 mb-2" rows={2} value={quickAction.content} onChange={e => setQuickAction({ ...quickAction, content: e.target.value })}
+                                                                                                    onKeyDown={e => {
+                                                                                                        if (e.key === 'Enter' && !e.shiftKey) {
+                                                                                                            e.preventDefault();
+                                                                                                            // Reuse global Modal Submit logic trigger via ref or just duplicate simple logic here
+                                                                                                            if (quickAction.type === 'ask') {
+                                                                                                                const deptChannel = chat.channels.find(c => c.name.toLowerCase() === task.dept?.toLowerCase());
+                                                                                                                const targetChannelId = deptChannel ? deptChannel.id : (chat.activeChannelId || chat.channels[0]?.id);
+                                                                                                                if (targetChannelId && quickAction.content.trim()) api.post(`/channels/${targetChannelId}/messages`, { content: `@${task.requester} [Task #${task.id}] ${quickAction.content}` }).then(() => setQuickAction(null));
+                                                                                                            } else if (quickAction.type === 'revision') {
+                                                                                                                api.post(`/tasks/${task.id}/request-revision`, { reason: quickAction.content }).then(() => { setQuickAction(null); loadTasks(); });
+                                                                                                            } else {
+                                                                                                                api.patch(`/tasks/${task.id}`, { status: 'rejected', comment: quickAction.content }).then(loadTasks).finally(() => setQuickAction(null));
+                                                                                                            }
                                                                                                         }
-                                                                                                    }
-                                                                                                }}
-                                                                                            />
-                                                                                            <div className="flex justify-end gap-2"><button onClick={() => setQuickAction(null)} className="text-[10px] text-zinc-500">Cancel</button></div>
-                                                                                        </div>
-                                                                                    ) : (
-                                                                                        <div className="flex items-center gap-1">
-                                                                                            {(() => {
-                                                                                                // Permission Logic
-                                                                                                const channel = chat.channels.find(c => c.name.toLowerCase() === task.dept?.toLowerCase());
-                                                                                                const targetDeptId = channel?.targetDepartment?.id;
-                                                                                                const isWorker = auth.user?.role === 'admin' || !targetDeptId || auth.user?.department?.id === targetDeptId;
-                                                                                                const isAssignedToOther = task.owner && task.owner !== 'Unknown' && task.owner !== auth.user?.fullName;
+                                                                                                    }}
+                                                                                                />
+                                                                                                <div className="flex justify-end gap-2"><button onClick={() => setQuickAction(null)} className="text-[10px] text-zinc-500">Cancel</button></div>
+                                                                                            </div>
+                                                                                        ) : (
+                                                                                            <div className="flex items-center gap-1">
+                                                                                                {(() => {
+                                                                                                    const channel = chat.channels.find(c => c.name.toLowerCase() === task.dept?.toLowerCase());
+                                                                                                    const targetDeptId = channel?.targetDepartment?.id;
+                                                                                                    const isWorker = auth.user?.role === 'admin' || !targetDeptId || auth.user?.department?.id === targetDeptId;
+                                                                                                    const isAssignedToOther = task.owner && task.owner !== 'Unknown' && task.owner !== auth.user?.fullName;
+                                                                                                    const isAssignedToMe = task.owner === auth.user?.fullName;
+                                                                                                    const canReset = (isWorker && isAssignedToMe) || auth.user?.role === 'admin';
 
-                                                                                                if (!isWorker) return null;
+                                                                                                    const handleUnauthorizedClick = () => {
+                                                                                                        const deptName = channel?.targetDepartment?.name || task.dept;
+                                                                                                        alert(`⛔ NO PERMISSION\n\nOnly members of the '${deptName}' department can work on these tasks.`);
+                                                                                                    };
 
-                                                                                                if (task.status === 'todo') {
                                                                                                     return (
-                                                                                                        <button
-                                                                                                            onClick={async () => {
-                                                                                                                try {
-                                                                                                                    await api.patch(`/tasks/${task.id}`, { status: 'in_progress' });
-                                                                                                                    loadTasks();
-                                                                                                                } catch (error: any) {
-                                                                                                                    if (error.response?.status === 403) {
-                                                                                                                        alert(error.response?.data?.message || 'Bu görevi alabilmek için yetkiniz yok. Sadece ilgili departman kullanıcıları bu task üzerinde çalışabilir.');
-                                                                                                                    } else {
-                                                                                                                        console.error('Task update error:', error);
-                                                                                                                    }
-                                                                                                                }
-                                                                                                            }}
-                                                                                                            className="flex-1 h-6 flex items-center justify-center bg-zinc-800 border border-white/5 rounded hover:text-emerald-400 group/btn"
-                                                                                                            title="Start Task"
-                                                                                                        >
-                                                                                                            <Play size={10} className="group-hover/btn:fill-emerald-400" />
-                                                                                                        </button>
+                                                                                                        <>
+                                                                                                            {/* START TASK (Todo -> In Progress) */}
+                                                                                                            {task.status === 'todo' && (
+                                                                                                                isWorker ? (
+                                                                                                                    <button onClick={async () => { try { await api.patch(`/tasks/${task.id}`, { status: 'in_progress' }); loadTasks(); } catch (error: any) { alert(error.response?.data?.message || 'Error updating task'); } }} className="flex-1 h-6 flex items-center justify-center bg-zinc-800 border border-white/5 rounded hover:text-emerald-400 group/btn" title="Start Task"><Play size={10} className="group-hover/btn:fill-emerald-400" /></button>
+                                                                                                                ) : (
+                                                                                                                    <button onClick={handleUnauthorizedClick} className="flex-1 h-6 flex items-center justify-center bg-zinc-800/30 border border-white/5 rounded text-zinc-600 hover:bg-red-900/10 hover:text-red-500 hover:border-red-500/20 transition-colors" title="Locked: Wrong Department"><Lock size={10} /></button>
+                                                                                                                )
+                                                                                                            )}
+
+                                                                                                            {/* IN PROGRESS ACTIONS */}
+                                                                                                            {(task.status === 'in_progress' || task.status === 'revision') && (
+                                                                                                                <>
+                                                                                                                    {/* RESET (Queue) */}
+                                                                                                                    {canReset ? (
+                                                                                                                        <button onClick={async () => { if (confirm('Return task to queue?')) { await api.patch(`/tasks/${task.id}`, { status: 'todo', ownerId: null }); loadTasks(); } }} className="w-6 h-6 flex items-center justify-center bg-zinc-800 border border-white/5 rounded hover:text-amber-400" title="Return to Queue"><RotateCcw size={10} /></button>
+                                                                                                                    ) : (
+                                                                                                                        !isWorker ? (
+                                                                                                                            <button onClick={handleUnauthorizedClick} className="w-6 h-6 flex items-center justify-center bg-zinc-800/30 border border-white/5 rounded text-zinc-600 hover:text-red-500" title="Locked"><Lock size={10} /></button>
+                                                                                                                        ) : null
+                                                                                                                    )}
+
+                                                                                                                    {/* FINISH */}
+                                                                                                                    {isWorker ? (
+                                                                                                                        isAssignedToOther ? (
+                                                                                                                            <div className="flex-1 h-6 flex items-center justify-center bg-zinc-800/50 border border-white/5 rounded text-zinc-600 cursor-not-allowed" title={`Locked: Assigned to ${task.owner}`}><Lock size={10} /></div>
+                                                                                                                        ) : (
+                                                                                                                            <button onClick={async () => { try { await api.patch(`/tasks/${task.id}`, { status: 'done' }); loadTasks(); } catch (error: any) { alert(error.response?.data?.message || 'Error'); } }} className="flex-1 h-6 flex items-center justify-center bg-zinc-800 border border-white/5 rounded hover:text-emerald-400 text-emerald-500/50" title={isMyRequest ? "Complete Task" : "Submit for Approval"}><CheckCircle2 size={12} /></button>
+                                                                                                                        )
+                                                                                                                    ) : (
+                                                                                                                        <button onClick={handleUnauthorizedClick} className="flex-1 h-6 flex items-center justify-center bg-zinc-800/30 border border-white/5 rounded text-zinc-600 hover:bg-red-900/10 hover:text-red-500" title="Locked: Wrong Department"><Lock size={10} /></button>
+                                                                                                                    )}
+                                                                                                                </>
+                                                                                                            )}
+
+                                                                                                            {/* REVISION REQUEST (Requester Only) */}
+                                                                                                            {isMyRequest && task.status === 'review' && (
+                                                                                                                <button
+                                                                                                                    onClick={() => setQuickAction({ taskId: task.id, type: 'revision', content: '' })}
+                                                                                                                    className="flex-1 h-6 flex items-center justify-center bg-amber-900/20 border border-amber-500/30 rounded hover:bg-amber-900/40 text-amber-500 animate-pulse"
+                                                                                                                    title="Request Revision"
+                                                                                                                >
+                                                                                                                    <RefreshCw size={12} />
+                                                                                                                </button>
+                                                                                                            )}
+
+                                                                                                            {/* COMMON ACTIONS */}
+                                                                                                            {(isWorker || isMyRequest) && (
+                                                                                                                <>
+                                                                                                                    <button onClick={() => setQuickAction({ taskId: task.id, type: 'ask', content: '' })} className="flex-1 h-6 flex items-center justify-center bg-zinc-800 border border-white/5 rounded hover:text-blue-400"><MessageSquare size={10} /></button>
+                                                                                                                </>
+                                                                                                            )}
+                                                                                                        </>
                                                                                                     );
-                                                                                                }
-
-                                                                                                if (task.status === 'in_progress') {
-                                                                                                    if (isAssignedToOther) {
-                                                                                                        return (
-                                                                                                            <div className="flex-1 h-6 flex items-center justify-center bg-zinc-800/50 border border-white/5 rounded text-zinc-600 cursor-not-allowed" title={`Locked: Assigned to ${task.owner}`}>
-                                                                                                                <Lock size={10} />
-                                                                                                            </div>
-                                                                                                        );
-                                                                                                    }
-                                                                                                    return (
-                                                                                                        <button
-                                                                                                            onClick={() => setQuickAction({ taskId: task.id, type: 'ask', content: '' })} // Actually maybe we want a Done action? 
-                                                                                                            // For now, let's add a proper DONE button here, replacing the Loop.
-                                                                                                            // But wait, the original code had 3 buttons. I should preserve the Ask/Reject for Workers too?
-                                                                                                            // I'll rewrite this block to return the Start/Done button AND the others.
-                                                                                                            className="hidden" // Placeholder to break valid return syntax, see below
-                                                                                                        />
-                                                                                                    );
-                                                                                                }
-
-                                                                                                return null;
-                                                                                            })()}
-
-                                                                                            {/* RENDER BUTTONS BASED ON LOGIC ABOVE - REWRITING BLOCK TO BE CLEANER */}
-                                                                                            {(() => {
-                                                                                                const channel = chat.channels.find(c => c.name.toLowerCase() === task.dept?.toLowerCase());
-                                                                                                const targetDeptId = channel?.targetDepartment?.id;
-                                                                                                const isWorker = auth.user?.role === 'admin' || !targetDeptId || auth.user?.department?.id === targetDeptId;
-                                                                                                const isAssignedToOther = task.owner && task.owner !== 'Unknown' && task.owner !== auth.user?.fullName;
-
-                                                                                                return (
-                                                                                                    <>
-                                                                                                        {/* WORKER ACTIONS */}
-                                                                                                        {isWorker && task.status === 'todo' && (
-                                                                                                            <button onClick={async () => { try { await api.patch(`/tasks/${task.id}`, { status: 'in_progress' }); loadTasks(); } catch (error: any) { if (error.response?.status === 403) { alert(error.response?.data?.message || 'Bu görevi alabilmek için yetkiniz yok.'); } else { console.error('Task update error:', error); } } }} className="flex-1 h-6 flex items-center justify-center bg-zinc-800 border border-white/5 rounded hover:text-emerald-400 group/btn" title="Start Task"><Play size={10} className="group-hover/btn:fill-emerald-400" /></button>
-                                                                                                        )}
-
-                                                                                                        {isWorker && task.status === 'in_progress' && (
-                                                                                                            isAssignedToOther ? (
-                                                                                                                <div className="flex-1 h-6 flex items-center justify-center bg-zinc-800/50 border border-white/5 rounded text-zinc-600 cursor-not-allowed" title={`Locked: Assigned to ${task.owner}`}><Lock size={10} /></div>
-                                                                                                            ) : (
-                                                                                                                <button onClick={async () => { try { await api.patch(`/tasks/${task.id}`, { status: 'done' }); loadTasks(); } catch (error: any) { if (error.response?.status === 403) { alert(error.response?.data?.message || 'Bu görevi tamamlayabilmek için yetkiniz yok.'); } else { console.error('Task update error:', error); } } }} className="flex-1 h-6 flex items-center justify-center bg-zinc-800 border border-white/5 rounded hover:text-emerald-400 text-emerald-500/50" title="Complete Task"><CheckCircle2 size={12} /></button>
-                                                                                                            )
-                                                                                                        )}
-
-                                                                                                        {/* COMMON ACTIONS (Ask/Reject) - Visible to Workers and Requester? */}
-                                                                                                        {/* Requester should be able to Ask/Reject their own task? */}
-                                                                                                        {(isWorker || isMyRequest) && (
-                                                                                                            <>
-                                                                                                                <button onClick={() => setQuickAction({ taskId: task.id, type: 'ask', content: '' })} className="flex-1 h-6 flex items-center justify-center bg-zinc-800 border border-white/5 rounded hover:text-blue-400"><MessageSquare size={10} /></button>
-                                                                                                                <button onClick={() => setQuickAction({ taskId: task.id, type: 'reject', content: '' })} className="flex-1 h-6 flex items-center justify-center bg-zinc-800 border border-white/5 rounded hover:text-red-400"><XCircle size={10} /></button>
-                                                                                                            </>
-                                                                                                        )}
-                                                                                                    </>
-                                                                                                );
-                                                                                            })()}
-                                                                                        </div>
-                                                                                    )}
-                                                                                </div>
-                                                                            )}
-                                                                        </motion.div>
-                                                                    );
-                                                                })
-                                                        )}
+                                                                                                })()}
+                                                                                            </div>
+                                                                                        )}
+                                                                                    </div>
+                                                                                )}
+                                                                            </motion.div>
+                                                                        );
+                                                                    })
+                                                            )}
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            ))}
+                                                );
+                                            })}
                                     </div>
                                 ) : viewMode === 'list' ? (
                                     // LIST VIEW IMPLEMENTATION (SECTIONED)
@@ -1891,7 +1995,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                     // GRID VIEW (GALLERY - SECTIONED)
                                     <div className="w-full pb-20 flex flex-col gap-8">
                                         {['todo', 'in_progress', 'done'].map(status => {
-                                            const sectionTasks = filteredTasks.filter(t => status === 'done' ? (t.status === 'done' || t.status === 'rejected') : t.status === status);
+                                            const sectionTasks = filteredTasks.filter(t => status === 'done' ? (t.status === 'done' || t.status === 'rejected') : (status === 'in_progress' ? (t.status === 'in_progress' || t.status === 'review' || t.status === 'revision') : t.status === status));
                                             if (filterStatus !== 'all' && filterStatus !== status) return null;
 
                                             const label = status === 'todo' ? 'In Queue' : status === 'in_progress' ? 'On Air' : 'Archived';
@@ -2070,69 +2174,132 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                             <span className="text-zinc-500 text-xs font-mono">#{selectedTask.id}</span>
                                                         </div>
 
-                                                        <h1 className="text-2xl font-bold text-white mb-4 leading-tight">{selectedTask.title}</h1>
-
-                                                        {selectedTask.imageUrl && (
-                                                            <div
-                                                                className="mb-6 rounded-xl overflow-hidden border border-white/10 group relative cursor-pointer"
-                                                                onClick={() => setLightboxUrl(selectedTask.imageUrl || null)}
+                                                        {/* Detail Tabs */}
+                                                        <div className="flex items-center gap-4 border-b border-white/10 mb-4">
+                                                            <button
+                                                                onClick={() => setDetailTab('details')}
+                                                                className={`pb-2 text-sm font-bold border-b-2 transition-colors ${detailTab === 'details' ? 'border-emerald-500 text-white' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}
                                                             >
-                                                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                                                                    <div className="opacity-0 group-hover:opacity-100 transform scale-90 group-hover:scale-100 transition-all bg-black/60 text-white px-3 py-1.5 rounded-full text-xs font-bold backdrop-blur-sm border border-white/10 flex items-center gap-2">
-                                                                        <Search size={14} /> Full Screen
+                                                                Details
+                                                            </button>
+                                                            <button
+                                                                onClick={() => setDetailTab('revisions')}
+                                                                className={`pb-2 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${detailTab === 'revisions' ? 'border-amber-500 text-white' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}
+                                                            >
+                                                                Revisions
+                                                                {(selectedTask.revisions?.length || 0) > 0 && (
+                                                                    <span className="bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded-full text-[9px]">{selectedTask.revisions?.length}</span>
+                                                                )}
+                                                            </button>
+                                                        </div>
+
+                                                        {detailTab === 'details' ? (
+                                                            <>
+                                                                <h1 className="text-2xl font-bold text-white mb-4 leading-tight">{selectedTask.title}</h1>
+
+                                                                {selectedTask.imageUrl && (
+                                                                    <div
+                                                                        className="mb-6 rounded-xl overflow-hidden border border-white/10 group relative cursor-pointer"
+                                                                        onClick={() => setLightboxUrl(selectedTask.imageUrl || null)}
+                                                                    >
+                                                                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                                                                            <div className="opacity-0 group-hover:opacity-100 transform scale-90 group-hover:scale-100 transition-all bg-black/60 text-white px-3 py-1.5 rounded-full text-xs font-bold backdrop-blur-sm border border-white/10 flex items-center gap-2">
+                                                                                <Search size={14} /> Full Screen
+                                                                            </div>
+                                                                        </div>
+                                                                        <img src={selectedTask.imageUrl} className="w-full h-auto max-h-64 object-cover" alt="Task Attachment" />
+                                                                    </div>
+                                                                )}
+
+                                                                <div className="bg-zinc-900/50 rounded-xl p-4 border border-white/5 mb-6">
+                                                                    <span className="text-zinc-500 text-[10px] font-bold uppercase tracking-wider block mb-2">Description</span>
+                                                                    <p className="text-zinc-300 text-sm whitespace-pre-wrap leading-relaxed">
+                                                                        {selectedTask.description || "No description provided."}
+                                                                    </p>
+                                                                </div>
+
+                                                                <div className="grid grid-cols-2 gap-4 mb-6">
+                                                                    <div className="bg-zinc-900/30 p-3 rounded-lg border border-white/5">
+                                                                        <span className="text-zinc-500 text-[10px] font-bold uppercase block mb-1">Requested By</span>
+                                                                        <span className="text-white text-sm font-medium">{selectedTask.requester || 'System'}</span>
+                                                                    </div>
+                                                                    <div className="bg-zinc-900/30 p-3 rounded-lg border border-white/5">
+                                                                        <span className="text-zinc-500 text-[10px] font-bold uppercase block mb-1">Assigned To</span>
+                                                                        <div className="flex items-center gap-2">
+                                                                            <div className="w-5 h-5 rounded-full bg-zinc-800 flex items-center justify-center text-[9px] font-bold text-zinc-400 border border-white/10">
+                                                                                {selectedTask.owner && selectedTask.owner !== 'Unknown' ? selectedTask.owner[0] : '?'}
+                                                                            </div>
+                                                                            <span className={`text-sm font-medium ${selectedTask.owner && selectedTask.owner !== 'Unknown' ? 'text-white' : 'text-zinc-600 italic'}`}>
+                                                                                {selectedTask.owner && selectedTask.owner !== 'Unknown' ? selectedTask.owner : 'Unassigned'}
+                                                                            </span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="bg-zinc-900/30 p-3 rounded-lg border border-white/5">
+                                                                        <span className="text-zinc-500 text-[10px] font-bold uppercase block mb-1">Department</span>
+                                                                        <span className="text-white text-sm font-medium">{selectedTask.dept}</span>
+                                                                    </div>
+                                                                    <div className="bg-zinc-900/30 p-3 rounded-lg border border-white/5">
+                                                                        <span className="text-zinc-500 text-[10px] font-bold uppercase block mb-1">Priority</span>
+                                                                        <span className={`text - sm font - bold ${selectedTask.priority === 'P1' ? 'text-red-400' : 'text-zinc-300'} `}>
+                                                                            {selectedTask.priority}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="bg-zinc-900/30 p-3 rounded-lg border border-white/5">
+                                                                        <span className="text-zinc-500 text-[10px] font-bold uppercase block mb-1">Due Date</span>
+                                                                        <span className="text-white text-sm font-medium">{selectedTask.due}</span>
+                                                                    </div>
+                                                                    <div className="bg-zinc-900/30 p-3 rounded-lg border border-white/5 col-span-2 flex items-center justify-between">
+                                                                        <span className="text-zinc-500 text-[10px] font-bold uppercase block">Duration Tracking</span>
+                                                                        <TaskTimerWidget
+                                                                            status={selectedTask.status}
+                                                                            createdAt={selectedTask.createdAt}
+                                                                            startedAt={selectedTask.startedAt}
+                                                                            completedAt={selectedTask.completedAt}
+                                                                        />
                                                                     </div>
                                                                 </div>
-                                                                <img src={selectedTask.imageUrl} className="w-full h-auto max-h-64 object-cover" alt="Task Attachment" />
+
+                                                            </>
+                                                        ) : (
+                                                            <div className="space-y-6">
+                                                                {/* Revisions Timeline */}
+                                                                {(!selectedTask.revisions || selectedTask.revisions.length === 0) ? (
+                                                                    <div className="text-center py-10 opacity-50">
+                                                                        <Layers size={48} className="mx-auto mb-3 text-zinc-600" />
+                                                                        <p className="text-sm font-bold text-zinc-500">No revisions found.</p>
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="relative border-l border-white/10 ml-3 pl-6 space-y-8 py-2">
+                                                                        {[...selectedTask.revisions].sort((a, b) => b.revisionNumber - a.revisionNumber).map((rev) => (
+                                                                            <div key={rev.id} className="relative">
+                                                                                <div className="absolute -left-[31px] top-0 w-4 h-4 rounded-full bg-amber-500/10 border border-amber-500 flex items-center justify-center">
+                                                                                    <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                                                                </div>
+                                                                                <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-4">
+                                                                                    <div className="flex items-center justify-between mb-2">
+                                                                                        <h4 className="text-sm font-black text-amber-500 uppercase tracking-wider">Revision v{rev.revisionNumber}</h4>
+                                                                                        <span className="text-[10px] font-mono text-zinc-500">{new Date(rev.created_at || rev.createdAt).toLocaleDateString()}</span>
+                                                                                    </div>
+                                                                                    <div className="flex items-center gap-2 mb-3">
+                                                                                        <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border ${rev.severity === 'critical' ? 'bg-red-500/10 border-red-500 text-red-500' :
+                                                                                            rev.severity === 'high' ? 'bg-orange-500/10 border-orange-500 text-orange-500' :
+                                                                                                'bg-zinc-800 border-white/10 text-zinc-400'
+                                                                                            }`}>{rev.severity}</span>
+                                                                                        <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border bg-zinc-800 border-white/10 text-zinc-400">{rev.type}</span>
+                                                                                    </div>
+                                                                                    <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap">{rev.description}</p>
+                                                                                    {rev.attachmentUrl && (
+                                                                                        <a href={rev.attachmentUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 text-xs font-bold text-blue-400 hover:text-blue-300">
+                                                                                            <LogOut size={10} /> View Attachment
+                                                                                        </a>
+                                                                                    )}
+                                                                                </div>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         )}
-
-                                                        <div className="bg-zinc-900/50 rounded-xl p-4 border border-white/5 mb-6">
-                                                            <span className="text-zinc-500 text-[10px] font-bold uppercase tracking-wider block mb-2">Description</span>
-                                                            <p className="text-zinc-300 text-sm whitespace-pre-wrap leading-relaxed">
-                                                                {selectedTask.description || "No description provided."}
-                                                            </p>
-                                                        </div>
-
-                                                        <div className="grid grid-cols-2 gap-4 mb-6">
-                                                            <div className="bg-zinc-900/30 p-3 rounded-lg border border-white/5">
-                                                                <span className="text-zinc-500 text-[10px] font-bold uppercase block mb-1">Requested By</span>
-                                                                <span className="text-white text-sm font-medium">{selectedTask.requester || 'System'}</span>
-                                                            </div>
-                                                            <div className="bg-zinc-900/30 p-3 rounded-lg border border-white/5">
-                                                                <span className="text-zinc-500 text-[10px] font-bold uppercase block mb-1">Assigned To</span>
-                                                                <div className="flex items-center gap-2">
-                                                                    <div className="w-5 h-5 rounded-full bg-zinc-800 flex items-center justify-center text-[9px] font-bold text-zinc-400 border border-white/10">
-                                                                        {selectedTask.owner && selectedTask.owner !== 'Unknown' ? selectedTask.owner[0] : '?'}
-                                                                    </div>
-                                                                    <span className={`text-sm font-medium ${selectedTask.owner && selectedTask.owner !== 'Unknown' ? 'text-white' : 'text-zinc-600 italic'}`}>
-                                                                        {selectedTask.owner && selectedTask.owner !== 'Unknown' ? selectedTask.owner : 'Unassigned'}
-                                                                    </span>
-                                                                </div>
-                                                            </div>
-                                                            <div className="bg-zinc-900/30 p-3 rounded-lg border border-white/5">
-                                                                <span className="text-zinc-500 text-[10px] font-bold uppercase block mb-1">Department</span>
-                                                                <span className="text-white text-sm font-medium">{selectedTask.dept}</span>
-                                                            </div>
-                                                            <div className="bg-zinc-900/30 p-3 rounded-lg border border-white/5">
-                                                                <span className="text-zinc-500 text-[10px] font-bold uppercase block mb-1">Priority</span>
-                                                                <span className={`text - sm font - bold ${selectedTask.priority === 'P1' ? 'text-red-400' : 'text-zinc-300'} `}>
-                                                                    {selectedTask.priority}
-                                                                </span>
-                                                            </div>
-                                                            <div className="bg-zinc-900/30 p-3 rounded-lg border border-white/5">
-                                                                <span className="text-zinc-500 text-[10px] font-bold uppercase block mb-1">Due Date</span>
-                                                                <span className="text-white text-sm font-medium">{selectedTask.due}</span>
-                                                            </div>
-                                                            <div className="bg-zinc-900/30 p-3 rounded-lg border border-white/5 col-span-2 flex items-center justify-between">
-                                                                <span className="text-zinc-500 text-[10px] font-bold uppercase block">Duration Tracking</span>
-                                                                <TaskTimerWidget
-                                                                    status={selectedTask.status}
-                                                                    createdAt={selectedTask.createdAt}
-                                                                    startedAt={selectedTask.startedAt}
-                                                                    completedAt={selectedTask.completedAt}
-                                                                />
-                                                            </div>
-                                                        </div>
                                                     </div>
 
                                                     {/* Actions Footer */}
@@ -2182,6 +2349,13 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                                 className="col-span-1 bg-sky-600 hover:bg-sky-500 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2"
                                                             >
                                                                 <MessageSquare size={16} /> Ask
+                                                            </button>
+
+                                                            <button
+                                                                onClick={() => setQuickAction({ taskId: selectedTask.id, type: 'revision', content: '' })}
+                                                                className="col-span-1 bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2"
+                                                            >
+                                                                <RotateCcw size={16} /> Request Revision
                                                             </button>
 
                                                             {selectedTask.status !== 'rejected' && (
@@ -2264,6 +2438,30 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                     )}
                 </AnimatePresence>
             </div>
-        </div>
+            {/* Revision Modal */}
+            <RevisionRequestModal
+                isOpen={quickAction?.type === 'revision'}
+                onClose={() => setQuickAction(null)}
+                onSubmit={async (data) => {
+                    if (!quickAction?.taskId) return;
+                    try {
+                        const response = await api.post(`/tasks/${quickAction.taskId}/request-revision`, data);
+                        setQuickAction(null);
+
+                        // Update UI immediately
+                        if (selectedTask && selectedTask.id === quickAction.taskId) {
+                            setSelectedTask(response.data);
+                            setDetailTab('revisions');
+                        }
+
+                        loadTasks(); // Refresh
+                    } catch (error) {
+                        console.error('Failed to request revision', error);
+                        alert("Failed to request revision");
+                    }
+                }}
+                taskTitle={tasks.find(t => t.id === quickAction?.taskId)?.title || ''}
+            />
+        </div >
     );
 }
