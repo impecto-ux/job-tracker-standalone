@@ -53,9 +53,73 @@ export class ChannelsService implements OnApplicationBootstrap {
         const savedChannelRaw = await this.channelsRepository.save(channel);
         const savedChannel = await this.channelsRepository.findOne({ where: { id: savedChannelRaw.id }, relations: ['targetDepartment'] });
 
-        this.chatGateway.broadcastChannelCreated(savedChannel);
+        if (savedChannel) {
+            this.chatGateway.broadcastChannelCreated(savedChannel);
+        }
 
-        return savedChannel;
+        return {
+            id: savedChannel?.id || savedChannelRaw.id,
+            name: savedChannel?.name || savedChannelRaw.name,
+            type: savedChannel?.type || savedChannelRaw.type,
+            targetDepartment: savedChannel?.targetDepartment ? { id: savedChannel.targetDepartment.id, name: savedChannel.targetDepartment.name } : null
+        };
+    }
+
+    async createDirectMessage(userId: number, targetId: number) {
+        // 1. Check for existing DM
+        // We need to find a channel of type 'private' that has EXACTLY these two users.
+        // This is a bit complex with TypeORM, so we'll fetch all private channels for the user and filter.
+        // Optimization: In a large app, we'd use a robust QueryBuilder or a separate 'participants' table.
+
+        const userChannels = await this.channelsRepository.find({
+            where: { type: 'private' },
+            relations: ['users']
+        });
+
+        const existing = userChannels.find(c =>
+            c.users.length === 2 &&
+            c.users.some(u => u.id === userId) &&
+            c.users.some(u => u.id === targetId)
+        );
+
+        if (existing) {
+            return {
+                id: existing.id,
+                name: existing.name,
+                type: existing.type,
+                users: existing.users?.map(u => ({ id: u.id, fullName: u.fullName }))
+            };
+        }
+
+        // 2. Create New DM
+        const user = await this.usersService.findOne(userId);
+        const target = await this.usersService.findOne(targetId);
+
+        if (!user || !target) throw new Error('User not found');
+
+        const channel = this.channelsRepository.create({
+            name: `dm-${Math.min(userId, targetId)}-${Math.max(userId, targetId)}`, // Unique stable name
+            type: 'private',
+            users: [user, target]
+        });
+
+        const savedChannel = await this.channelsRepository.save(channel);
+
+        // Fetch fully populated for broadcast but return simple version
+        const populated = await this.channelsRepository.findOne({
+            where: { id: savedChannel.id },
+            relations: ['users']
+        });
+
+        // Broadcast to BOTH users
+        this.chatGateway.broadcastChannelCreated(populated);
+
+        return {
+            id: savedChannel.id,
+            name: savedChannel.name,
+            type: savedChannel.type,
+            users: populated?.users?.map(u => ({ id: u.id, fullName: u.fullName }))
+        };
     }
 
     async updateChannel(id: number, name: string, targetDepartmentId?: number) {
@@ -71,18 +135,37 @@ export class ChannelsService implements OnApplicationBootstrap {
         }
 
         await this.channelsRepository.update(id, updateData);
-        return this.channelsRepository.findOne({ where: { id }, relations: ['users', 'targetDepartment'] });
+        const updated = await this.channelsRepository.findOne({ where: { id }, relations: ['users', 'targetDepartment'] });
+
+        return {
+            id: updated?.id,
+            name: updated?.name,
+            type: updated?.type,
+            targetDepartment: updated?.targetDepartment ? { id: updated.targetDepartment.id, name: updated.targetDepartment.name } : null,
+            users: updated?.users?.map(u => ({ id: u.id, fullName: u.fullName }))
+        };
     }
 
     async deleteChannel(id: number) {
-        // Manually delete messages first (since we didn't set cascade in entity)
+        // 1. Manually delete messages first
         await this.messagesRepository.delete({ channel: { id } });
-        const result = await this.channelsRepository.delete(id);
 
-        // Notify clients
-        this.broadcastChannelDeleted(id);
+        // 2. Load the entity with relations to ensure TypeORM cleans up join tables (ManyToMany)
+        const channel = await this.channelsRepository.findOne({
+            where: { id },
+            relations: ['users']
+        });
 
-        return result;
+        if (channel) {
+            // repository.remove() handles ManyToMany cleanup if relations are loaded
+            await this.channelsRepository.remove(channel);
+
+            // Notify clients
+            this.broadcastChannelDeleted(id);
+            return { success: true, id };
+        }
+
+        return { success: false, message: 'Channel not found' };
     }
 
     broadcastChannelDeleted(channelId: number) {
@@ -106,22 +189,25 @@ export class ChannelsService implements OnApplicationBootstrap {
 
         // Start QueryBuilder
         const query = this.channelsRepository.createQueryBuilder('channel')
-            .leftJoinAndSelect('channel.users', 'users')
+            .leftJoinAndSelect('channel.users', 'allUsers') // Distinct alias for loading data
             .leftJoinAndSelect('channel.targetDepartment', 'targetDepartment')
-            // Join with groups table using raw table name and snake_case columns
             .leftJoin('groups', 'g', 'g.channel_id = channel.id');
 
         if (userId) {
-            // Logic:
-            // 1. User is a member of the channel (checked via join table)
-            // 2. OR (Admin Only) showAll is true AND group is NOT private
             query.andWhere(new Brackets(qb => {
-                qb.where('users.id = :userId', { userId });
+                // Check membership using a subquery logic implicitly via separate join or simpler WHERE exists
+                // OR simpler: Join 'users' only for filtering
+                // But TypeORM QueryBuilder is easiest with innerJoin for filtering
+
+                // Let's use a subquery approach for membership to avoid filtering the 'allUsers' relation
+                qb.where(`EXISTS (
+                    SELECT 1 FROM channel_users_users cu 
+                    WHERE cu."channelId" = channel.id AND cu."usersId" = :userId
+                )`, { userId });
 
                 if (showAll && userRole === 'admin') {
-                    // Include ALL groups (Public & Private) for Admins when showAll is true
-                    // Note: This overrides the membership filter for admins
-                    qb.orWhere('channel.type = :typeGroup', { typeGroup: 'group' });
+                    qb.orWhere('channel.type = :typeGroup', { typeGroup: 'channel_group' }); // Note: 'group' is reserved word in SQL often, channel.type values are 'group' (string)
+                    qb.orWhere('channel.type = :typeGroupString', { typeGroupString: 'group' });
                 }
             }));
         } else {
@@ -132,7 +218,16 @@ export class ChannelsService implements OnApplicationBootstrap {
         console.log(`[ChannelsService] Executing query...`);
         const results = await query.getMany();
         console.log(`[ChannelsService] Found ${results.length} channels.`);
-        return results;
+
+        return results.map(c => ({
+            id: c.id,
+            name: c.name,
+            type: c.type,
+            targetDepartment: c.targetDepartment ? { id: c.targetDepartment.id, name: c.targetDepartment.name } : null,
+            users: c.users?.map(u => ({ id: u.id, fullName: u.fullName })),
+            createdAt: c.createdAt,
+            updatedAt: c.updatedAt
+        })) as any;
     }
 
     async findByName(name: string) {
@@ -170,7 +265,17 @@ export class ChannelsService implements OnApplicationBootstrap {
         });
 
         // Re-sort to ASC to maintain chronological order in UI
-        return messages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+        return messages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()).map(m => ({
+            id: m.id,
+            content: m.content,
+            sender: m.sender ? { id: m.sender.id, fullName: m.sender.fullName } : null,
+            createdAt: m.createdAt,
+            mediaUrl: m.mediaUrl,
+            thumbnailUrl: m.thumbnailUrl,
+            mediaType: m.mediaType,
+            replyTo: m.replyTo ? { id: m.replyTo.id, content: m.replyTo.content, sender: m.replyTo.sender ? { id: m.replyTo.sender.id, fullName: m.replyTo.sender.fullName } : null } : null,
+            linkedTaskId: m.linkedTaskId
+        })) as any;
     }
 
     async postMessage(channelId: number, content: string, userId: number, mediaUrl?: string, mediaType?: string, replyToId?: number, thumbnailUrl?: string): Promise<Message> {
@@ -233,7 +338,14 @@ export class ChannelsService implements OnApplicationBootstrap {
 - Be specific for better results.`;
 
             await this.sendBotMessage(channelId, helpText);
-            return this.messagesRepository.findOneOrFail({ where: { id: savedMessage.id }, relations: ['sender'] });
+            const helpMsg = await this.messagesRepository.findOneOrFail({ where: { id: savedMessage.id }, relations: ['sender', 'channel'] });
+            return {
+                id: helpMsg.id,
+                content: helpMsg.content,
+                sender: helpMsg.sender ? { id: helpMsg.sender.id, fullName: helpMsg.sender.fullName } : null,
+                createdAt: helpMsg.createdAt,
+                channel: { id: helpMsg.channel.id, name: helpMsg.channel.name, type: helpMsg.channel.type }
+            } as any;
         }
 
         // 2. Save User Message
@@ -259,26 +371,37 @@ export class ChannelsService implements OnApplicationBootstrap {
             if (mention) matchedPrefix = mention.name;
         }
 
-        const isAiRequest = !!matchedPrefix;
+        // DISALLOW AI IN PRIVATE CHANNELS (DMs)
+        const isAiAllowed = channel.type !== 'private';
+        const isAiRequest = !!matchedPrefix && isAiAllowed;
 
         if (isAiRequest) {
             console.log(`[ChannelsService] AI Requested. Prefix: "${matchedPrefix}". Content: "${content}"`);
             this.handleAiProcessing(savedMessage, content, matchedPrefix!, userId, channel)
                 .catch(e => console.error('[ChannelsService] Background AI Error:', e));
-        } else {
+        } else if (isAiAllowed) {
             // Check if ANY agent name is INCLUDED in the content (for more flexible mentions)
             const allAgents = await this.squadAgentsService.findAll();
             const mention = allAgents.find(a => content.toLowerCase().includes(a.name.toLowerCase()));
             if (mention) {
                 console.log(`[ChannelsService] AI Requested (Included Mention): "${mention.name}". Content: "${content}"`);
-                // Passing mention.name as prefix so handleAiProcessing can find them.
-                // Note: content tagging might happen here in the future.
                 this.handleAiProcessing(savedMessage, content, mention.name, userId, channel)
                     .catch(e => console.error('[ChannelsService] Background AI Error (Mention):', e));
             }
         }
 
-        return savedMessage;
+        return {
+            id: savedMessage.id,
+            content: savedMessage.content,
+            sender: savedMessage.sender ? { id: savedMessage.sender.id, fullName: savedMessage.sender.fullName } : null,
+            createdAt: savedMessage.createdAt,
+            mediaUrl: savedMessage.mediaUrl,
+            thumbnailUrl: savedMessage.thumbnailUrl,
+            mediaType: savedMessage.mediaType,
+            replyTo: savedMessage.replyTo ? { id: savedMessage.replyTo.id, content: savedMessage.replyTo.content } : undefined,
+            linkedTaskId: savedMessage.linkedTaskId,
+            channel: { id: savedMessage.channel.id, name: savedMessage.channel.name, type: savedMessage.channel.type }
+        } as any;
     }
 
     // Background AI Processor
@@ -444,6 +567,15 @@ export class ChannelsService implements OnApplicationBootstrap {
             this.chatGateway.broadcastMessage(savedMessage);
         }
         return savedMessage;
+    }
+
+    async updateMessageMetadata(messageId: number, metadata: any) {
+        const message = await this.messagesRepository.findOne({ where: { id: messageId }, relations: ['channel', 'sender', 'replyTo', 'replyTo.sender'] });
+        if (message) {
+            message.metadata = { ...(message.metadata || {}), ...metadata };
+            const saved = await this.messagesRepository.save(message);
+            this.chatGateway.broadcastMessageUpdated(saved);
+        }
     }
 
     async deleteMessage(channelId: number, messageId: number) {

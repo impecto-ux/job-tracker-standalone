@@ -12,6 +12,7 @@ import { UsersModule } from '../users/users.module';
 import { TasksGateway } from './tasks.gateway';
 import { SquadAgentsModule } from '../squad-agents/squad-agents.module';
 import { GroupsModule } from '../groups/groups.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { GroupsModule } from '../groups/groups.module';
     forwardRef(() => UsersModule),
     forwardRef(() => SquadAgentsModule),
     forwardRef(() => GroupsModule),
+    NotificationsModule,
   ],
   controllers: [TasksController],
   providers: [TasksService, TasksGateway],

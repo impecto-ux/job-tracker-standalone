@@ -18,6 +18,11 @@ export class ChannelsController {
         return this.channelsService.createChannel(body.name, body.type);
     }
 
+    @Post('dm')
+    createDM(@Body() body: { targetUserId: number }, @Request() req) {
+        return this.channelsService.createDirectMessage(req.user.userId, body.targetUserId);
+    }
+
     @Patch(':id')
     update(@Param('id') id: string, @Body() body: { name: string; targetDepartmentId?: number }) {
         return this.channelsService.updateChannel(+id, body.name, body.targetDepartmentId);

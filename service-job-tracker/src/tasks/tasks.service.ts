@@ -15,6 +15,7 @@ import { TaskHistory } from './entities/task-history.entity';
 import * as fs from 'fs';
 import { join } from 'path';
 import { TaskRevision } from './entities/task-revision.entity';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class TasksService implements OnApplicationBootstrap {
@@ -39,6 +40,7 @@ export class TasksService implements OnApplicationBootstrap {
     private squadAgentsService: SquadAgentsService,
     @Inject(forwardRef(() => GroupsService))
     private groupsService: GroupsService,
+    private notificationsService: NotificationsService,
   ) { }
 
   async onApplicationBootstrap() {
@@ -237,6 +239,21 @@ export class TasksService implements OnApplicationBootstrap {
           await this.usersService.addPoints(task.ownerId, -task.score);
         }
       }
+      // REJECTED Logic
+      else if (newStatus === 'rejected' && oldStatus !== 'rejected') {
+        const rejectionReason = updateTaskDto.comment || comment || 'No reason provided';
+        console.log(`[TasksService] Task #${id} REJECTED. Reason: ${rejectionReason}`);
+
+        if (task.channelId) {
+          // Update original message metadata if exists
+          if (task.metadata?.sourceMessageId) {
+            await this.channelsService.updateMessageMetadata(task.metadata.sourceMessageId, {
+              rejectionReason,
+              taskStatus: 'rejected'
+            });
+          }
+        }
+      }
     }
 
     const savedTask = await this.tasksRepository.save(task);
@@ -329,6 +346,31 @@ export class TasksService implements OnApplicationBootstrap {
       }
     }
 
+    // 4. NOTIFICATIONS
+    // A. Notify New Owner
+    if (updateTaskDto.ownerId && updateTaskDto.ownerId !== task.ownerId) {
+      this.notificationsService.create(
+        updateTaskDto.ownerId,
+        'assignment',
+        'New Task Assigned',
+        `You have been assigned to task #${id}: "${updatedTask.title}"`,
+        { taskId: id }
+      );
+    }
+
+    // B. Notify Requester on Completion
+    if (newStatus === 'done' && oldStatus !== 'done' && updatedTask.requesterId) {
+      if (updatedTask.requesterId !== userId) { // Don't notify if they completed it themselves
+        this.notificationsService.create(
+          updatedTask.requesterId,
+          'success',
+          'Task Completed',
+          `Task #${id} "${updatedTask.title}" has been completed by ${user.fullName || user.username}.`,
+          { taskId: id }
+        );
+      }
+    }
+
     return updatedTask;
   }
 
@@ -347,9 +389,17 @@ export class TasksService implements OnApplicationBootstrap {
     return this.commentsRepository.save(comment);
   }
 
-  async remove(id: number): Promise<void> {
+  async remove(id: number, reason?: string): Promise<void> {
     const task = await this.findOne(id);
     if (task) {
+      // Update original message metadata if exists
+      if (task.metadata?.sourceMessageId) {
+        await this.channelsService.updateMessageMetadata(task.metadata.sourceMessageId, {
+          deletionReason: reason || 'Deleted by admin',
+          taskStatus: 'rejected'
+        });
+      }
+
       await this.tasksRepository.remove(task);
       this.tasksGateway.sendTaskDeleted(id);
     }
@@ -502,6 +552,17 @@ Status set to: **REVISION**`;
       console.error('Failed to send revision notification', e);
     }
 
+
+    // Notify Owner about Revision
+    if (task.ownerId && task.ownerId !== userId) {
+      this.notificationsService.create(
+        task.ownerId,
+        'warning',
+        'Revision Requested',
+        `A revision has been requested for task #${id}: "${task.title}".`,
+        { taskId: id }
+      );
+    }
 
     const fullTask = await this.findOne(savedTask.id);
     return fullTask;

@@ -18,20 +18,13 @@ import { GroupsModule } from './groups/groups.module';
 import { TeamsModule } from './teams/teams.module';
 import { TickerModule } from './ticker/ticker.module';
 import { SquadAgentsModule } from './squad-agents/squad-agents.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 // import { AdminModule } from '@adminjs/nestjs';
 // import { Database, Resource } from '@adminjs/typeorm';
 // import AdminJS from 'adminjs';
 
-import { User } from './users/entities/user.entity';
-import { Task } from './tasks/entities/task.entity';
-import { Department } from './departments/entities/department.entity';
-import { Comment } from './tasks/entities/comment.entity';
-import { StatsInsight } from './ai/entities/stats-insight.entity';
-
-// console.log('AdminJS Adapter Imports:', { Database, Resource });
-// // @ts-ignore
-// AdminJS.registerAdapter({ Database, Resource });
+// ... (Rest of file)
 
 @Module({
   imports: [
@@ -65,7 +58,9 @@ import { StatsInsight } from './ai/entities/stats-insight.entity';
     TeamsModule,
     TickerModule,
     SquadAgentsModule,
+    NotificationsModule,
     // AdminModule.createAdminAsync({
+
     //   imports: [ConfigModule],
     //   inject: [ConfigService],
     //   useFactory: async (configService: ConfigService) => ({

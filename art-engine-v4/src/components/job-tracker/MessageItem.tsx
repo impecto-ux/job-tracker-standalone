@@ -15,6 +15,8 @@ interface MessageItemProps {
     onReply: (msg: any) => void;
     onDelete: (msg: any) => void;
     onLightbox: (url: string) => void;
+    onMemberClick?: (member: any) => void;
+    isPrivateChannel?: boolean;
 }
 
 const USE_GLASS_MESSAGES = true;
@@ -31,7 +33,9 @@ const MessageItem: React.FC<MessageItemProps> = ({
     onToggleSelect,
     onReply,
     onDelete,
-    onLightbox
+    onLightbox,
+    onMemberClick,
+    isPrivateChannel
 }) => {
     console.log('[DEBUG] Rendering MessageItem:', msg.id);
     // Local Context Menu State
@@ -322,7 +326,15 @@ const MessageItem: React.FC<MessageItemProps> = ({
                             {/* Header: Sender Name (Others Only) */}
                             {!isMe && (
                                 <div className="flex items-center gap-2 mb-1.5">
-                                    <span className={`text-[10px] font-black tracking-widest uppercase ${getSenderColor(displaySender.fullName || '?')}`}>
+                                    <span
+                                        onClick={(e) => {
+                                            if (onMemberClick && msg.sender?.id) {
+                                                e.stopPropagation();
+                                                onMemberClick(msg.sender);
+                                            }
+                                        }}
+                                        className={`text-[10px] font-black tracking-widest uppercase ${getSenderColor(displaySender.fullName || '?')} ${onMemberClick && msg.sender?.id ? 'cursor-pointer hover:underline' : ''}`}
+                                    >
                                         {displaySender.fullName}
                                     </span>
                                 </div>
@@ -351,6 +363,19 @@ const MessageItem: React.FC<MessageItemProps> = ({
                                 {renderContent(msg.content)}
                             </div>
 
+                            {/* System Feedback (Rejection/Deletion) */}
+                            {isTask && (msg.metadata?.rejectionReason || msg.metadata?.deletionReason) && (
+                                <div className="mt-3 p-2 rounded-lg bg-red-500/10 border border-red-500/20 flex flex-col gap-1">
+                                    <div className="flex items-center gap-2 text-[9px] font-black uppercase text-red-400 tracking-wider">
+                                        <AlertCircle size={10} />
+                                        {msg.metadata.deletionReason ? 'TASK PERMANENTLY DELETED' : 'TASK REJECTED'}
+                                    </div>
+                                    <div className="text-[11px] text-zinc-300 italic leading-relaxed">
+                                        "{msg.metadata.deletionReason || msg.metadata.rejectionReason}"
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Footer: Time & Status */}
                             <div className="flex items-center justify-end gap-3 mt-3 opacity-60 select-none">
                                 {isTask && (
@@ -365,23 +390,26 @@ const MessageItem: React.FC<MessageItemProps> = ({
                                             {/* REVIEW (Middle-Right) - NEW */}
                                             <div className={`w-2 h-2 rounded-full shadow-[0_0_8px] transition-all duration-700 ${taskStatus === 'review' ? 'bg-purple-500 shadow-purple-500/80 ring-2 ring-purple-500/20 animate-pulse' : 'bg-zinc-800'}`} />
 
-                                            {/* DONE (or REVISION if failed) */}
+                                            {/* DONE / REJECTED / REVISION */}
                                             <div className={`w-2 h-2 rounded-full shadow-[0_0_8px] transition-all duration-700 
-                                                ${taskStatus === 'done' ? 'bg-emerald-400 shadow-emerald-400/80 ring-2 ring-emerald-400/20' :
-                                                    taskStatus === 'revision' ? 'bg-amber-500 shadow-amber-500/80 ring-2 ring-amber-500/20 animate-bounce' : 'bg-zinc-800'}`}
+                                                 ${taskStatus === 'done' ? 'bg-emerald-400 shadow-emerald-400/80 ring-2 ring-emerald-400/20' :
+                                                    (taskStatus === 'rejected' || msg.metadata?.deletionReason) ? 'bg-red-500 shadow-red-500/80 ring-2 ring-red-500/20' :
+                                                        taskStatus === 'revision' ? 'bg-amber-500 shadow-amber-500/80 ring-2 ring-amber-500/20 animate-bounce' : 'bg-zinc-800'}`}
                                             />
                                         </div>
                                         <span className={`text-[9px] font-black uppercase tracking-wider ml-1 
-                                            ${taskStatus === 'done' ? 'text-emerald-400' :
-                                                taskStatus === 'in_progress' ? 'text-blue-400' :
-                                                    taskStatus === 'review' ? 'text-purple-400' :
-                                                        taskStatus === 'revision' ? 'text-amber-500' :
-                                                            'text-zinc-500'}`}>
-                                            {taskStatus === 'done' ? 'COMPLETED' :
-                                                taskStatus === 'in_progress' ? 'ON AIR' :
-                                                    taskStatus === 'review' ? 'IN REVIEW' :
-                                                        taskStatus === 'revision' ? `REVISION ${msg.linkedTask?.revisionCount ? `#${msg.linkedTask.revisionCount}` : ''}` :
-                                                            'QUEUED'}
+                                             ${taskStatus === 'done' ? 'text-emerald-400' :
+                                                (taskStatus === 'rejected' || msg.metadata?.deletionReason) ? 'text-red-400' :
+                                                    taskStatus === 'in_progress' ? 'text-blue-400' :
+                                                        taskStatus === 'review' ? 'text-purple-400' :
+                                                            taskStatus === 'revision' ? 'text-amber-500' :
+                                                                'text-zinc-500'}`}>
+                                            {(taskStatus === 'rejected' || msg.metadata?.deletionReason) ? 'REJECTED' :
+                                                taskStatus === 'done' ? 'COMPLETED' :
+                                                    taskStatus === 'in_progress' ? 'ON AIR' :
+                                                        taskStatus === 'review' ? 'IN REVIEW' :
+                                                            taskStatus === 'revision' ? `REVISION ${msg.linkedTask?.revisionCount ? `#${msg.linkedTask.revisionCount}` : ''}` :
+                                                                'QUEUED'}
                                         </span>
                                     </div>
                                 )}
@@ -407,7 +435,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
         );
     };
 
-    const isTask = msg.linkedTaskId || msg.taskStatus || msg.content.includes('!task');
+    const isTask = msg.linkedTaskId || msg.taskStatus || (msg.content.includes('!task') && !isPrivateChannel);
 
     // DEBUG: Force a background color for testing
     const debugStyle = { border: '2px solid rgba(255,255,255,0.05)' };
@@ -488,7 +516,17 @@ const MessageItem: React.FC<MessageItemProps> = ({
 
                             {/* Sender Name (Group) */}
                             {!isMe && !isBot && (
-                                <div className={`text-xs font-bold mb-1 ${getSenderColor(displaySender.fullName || '?')}`}>{displaySender.fullName}</div>
+                                <div
+                                    onClick={(e) => {
+                                        if (onMemberClick && msg.sender?.id) {
+                                            e.stopPropagation();
+                                            onMemberClick(msg.sender);
+                                        }
+                                    }}
+                                    className={`text-xs font-bold mb-1 ${getSenderColor(displaySender.fullName || '?')} ${onMemberClick && msg.sender?.id ? 'cursor-pointer hover:underline' : ''}`}
+                                >
+                                    {displaySender.fullName}
+                                </div>
                             )}
 
                             {/* Media */}

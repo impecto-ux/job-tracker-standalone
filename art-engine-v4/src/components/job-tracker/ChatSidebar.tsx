@@ -8,17 +8,22 @@ import api from '@/lib/api';
 interface ChatSidebarProps {
     notificationStats?: Record<string, { p1Count: number }>;
     onCreateGroup?: (view?: 'root' | 'groups_root' | 'departments_root') => void;
-    onDiscoveryClick?: () => void;
+    onDiscoveryClick?: (tab?: 'groups' | 'people') => void;
     unreadCounts?: Record<number, number>;
     mentionCounts?: Record<number, number>;
+    isMobileLayout?: boolean;
+    headerActions?: React.ReactNode;
 }
+
 
 const ChatSidebar: React.FC<ChatSidebarProps> = ({
     notificationStats = {},
     onCreateGroup,
     onDiscoveryClick,
     unreadCounts = {},
-    mentionCounts = {}
+    mentionCounts = {},
+    isMobileLayout = false,
+    headerActions
 }) => {
     const authUser = useStore(state => state.auth.user);
     const authToken = useStore(state => state.auth.token);
@@ -124,7 +129,12 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
             return;
         }
 
-        if (!confirm('Are you sure you want to delete this channel?')) return;
+        const isDM = (channel?.type === 'private') || (channel?.name?.startsWith?.('dm-'));
+        const confirmMsg = isDM
+            ? 'Bu sohbeti silmek istediğinize emin misiniz?'
+            : 'Bu kanalı silmek istediğinize emin misiniz?';
+
+        if (!confirm(confirmMsg)) return;
         try {
             await api.delete(`/channels/${id}`);
             if (activeChannelId === id) {
@@ -132,7 +142,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
             }
             loadChannels(showAllGroups);
         } catch (error) {
-            console.error('Failed to delete channel', error);
+            console.error('Failed to delete chat/channel', error);
         }
     };
 
@@ -155,7 +165,7 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
     };
 
     return (
-        <div className={`flex flex-col border-r border-white/5 bg-[#111b21] ${activeChannelId ? 'hidden md:flex' : 'flex w-full'} md:w-80`}>
+        <div className="flex flex-col border-r border-white/5 bg-[#111b21] w-full h-full">
             <div className="h-16 px-4 bg-[#202c33] flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-zinc-700 overflow-hidden flex items-center justify-center">
@@ -163,83 +173,93 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
                     </div>
                     <span className="font-bold text-[#e9edef] text-sm">Groups</span>
                 </div>
-                <div className="flex gap-3 text-[#aebac1] relative">
-                    <button onClick={onDiscoveryClick} className="hover:text-emerald-400 transition-colors" title="Discover Groups">
-                        <Globe size={20} />
-                    </button>
-                    <div className="relative">
-                        <button onClick={() => setIsUserMenuOpen(!isUserMenuOpen)} className={`hover:text-white transition-colors ${isUserMenuOpen ? 'text-white' : ''}`} title="User Menu">
-                            <MoreHorizontal size={20} />
-                        </button>
-                        <AnimatePresence>
-                            {isUserMenuOpen && (
-                                <motion.div
-                                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                    className="absolute right-0 top-full mt-2 w-48 bg-[#233138] rounded-lg shadow-xl border border-white/5 overflow-hidden z-[60]"
-                                >
-                                    <div className="py-1">
-                                        <button
-                                            onClick={() => { setIsUserMenuOpen(false); router.push('/settings'); }}
-                                            className="w-full text-left px-4 py-2 hover:bg-[#111b21] text-[#d1d7db] text-sm flex items-center gap-3 transition-colors"
-                                        >
-                                            <div className="w-5 h-5 rounded-full bg-zinc-700 flex items-center justify-center">
-                                                <Edit2 size={12} className="text-zinc-400" />
-                                            </div>
-                                            Profile Settings
-                                        </button>
+                <div className="flex gap-2 text-[#aebac1] relative items-center">
+                    {/* Injected Actions (Collapse/Expand) */}
+                    {headerActions && (
+                        <>
+                            {headerActions}
+                            <div className="h-4 w-px bg-white/10 mx-1" />
+                        </>
+                    )}
 
-                                        {(isAdmin || authUser?.role === 'manager') && (
-                                            <>
-                                                {isAdmin && (
+                    <div className="flex gap-3 items-center">
+                        <button onClick={(e) => { e.stopPropagation(); if (onDiscoveryClick) onDiscoveryClick('groups'); }} className="hover:text-emerald-400 transition-colors" title="Discover Groups">
+                            <Globe size={20} />
+                        </button>
+                        <div className="relative">
+                            <button onClick={() => setIsUserMenuOpen(!isUserMenuOpen)} className={`hover:text-white transition-colors ${isUserMenuOpen ? 'text-white' : ''}`} title="User Menu">
+                                <MoreHorizontal size={20} />
+                            </button>
+                            <AnimatePresence>
+                                {isUserMenuOpen && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                        className="absolute right-0 top-full mt-2 w-48 bg-[#233138] rounded-lg shadow-xl border border-white/5 overflow-hidden z-[60]"
+                                    >
+                                        <div className="py-1">
+                                            <button
+                                                onClick={() => { setIsUserMenuOpen(false); router.push('/settings'); }}
+                                                className="w-full text-left px-4 py-2 hover:bg-[#111b21] text-[#d1d7db] text-sm flex items-center gap-3 transition-colors"
+                                            >
+                                                <div className="w-5 h-5 rounded-full bg-zinc-700 flex items-center justify-center">
+                                                    <Edit2 size={12} className="text-zinc-400" />
+                                                </div>
+                                                Profile Settings
+                                            </button>
+
+                                            {(isAdmin || authUser?.role === 'manager') && (
+                                                <>
+                                                    {isAdmin && (
+                                                        <button
+                                                            onClick={() => { setIsUserMenuOpen(false); router.push('/admin'); }}
+                                                            className="w-full text-left px-4 py-2 hover:bg-[#111b21] text-[#d1d7db] text-sm flex items-center gap-3 transition-colors"
+                                                        >
+                                                            <div className="w-5 h-5 rounded-full bg-indigo-500/20 flex items-center justify-center">
+                                                                <Shield size={12} className="text-indigo-400" />
+                                                            </div>
+                                                            Admin Dashboard
+                                                        </button>
+                                                    )}
                                                     <button
-                                                        onClick={() => { setIsUserMenuOpen(false); router.push('/admin'); }}
+                                                        onClick={() => { setIsUserMenuOpen(false); onCreateGroup ? onCreateGroup('root') : router.push('/admin/users'); }}
                                                         className="w-full text-left px-4 py-2 hover:bg-[#111b21] text-[#d1d7db] text-sm flex items-center gap-3 transition-colors"
                                                     >
-                                                        <div className="w-5 h-5 rounded-full bg-indigo-500/20 flex items-center justify-center">
-                                                            <Shield size={12} className="text-indigo-400" />
+                                                        <div className="w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                                                            <Users size={12} className="text-emerald-400" />
                                                         </div>
-                                                        Admin Dashboard
+                                                        User & Group Management
                                                     </button>
-                                                )}
-                                                <button
-                                                    onClick={() => { setIsUserMenuOpen(false); onCreateGroup ? onCreateGroup('root') : router.push('/admin/users'); }}
-                                                    className="w-full text-left px-4 py-2 hover:bg-[#111b21] text-[#d1d7db] text-sm flex items-center gap-3 transition-colors"
-                                                >
-                                                    <div className="w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                                                        <Users size={12} className="text-emerald-400" />
-                                                    </div>
-                                                    User & Group Management
-                                                </button>
-                                            </>
-                                        )}
+                                                </>
+                                            )}
 
-                                        <div className="h-px bg-white/5 my-1" />
-                                        <button
-                                            onClick={() => {
-                                                setIsUserMenuOpen(false);
-                                                useStore.getState().auth.logout();
-                                                router.push('/login');
-                                            }}
-                                            className="w-full text-left px-4 py-2 hover:bg-[#111b21] text-red-400 text-sm flex items-center gap-3 transition-colors"
-                                        >
-                                            <div className="w-5 h-5 rounded-full bg-red-500/20 flex items-center justify-center">
-                                                <Trash2 size={12} className="text-red-400" />
-                                            </div>
-                                            Sign Out
-                                        </button>
-                                    </div>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
+                                            <div className="h-px bg-white/5 my-1" />
+                                            <button
+                                                onClick={() => {
+                                                    setIsUserMenuOpen(false);
+                                                    useStore.getState().auth.logout();
+                                                    router.push('/login');
+                                                }}
+                                                className="w-full text-left px-4 py-2 hover:bg-[#111b21] text-red-400 text-sm flex items-center gap-3 transition-colors"
+                                            >
+                                                <div className="w-5 h-5 rounded-full bg-red-500/20 flex items-center justify-center">
+                                                    <Trash2 size={12} className="text-red-400" />
+                                                </div>
+                                                Sign Out
+                                            </button>
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
+                        {isUserMenuOpen && <div className="fixed inset-0 z-[55]" onClick={() => setIsUserMenuOpen(false)} />}
+                        {(isAdmin || authUser?.role === 'manager') && (
+                            <button onClick={() => { onCreateGroup ? onCreateGroup('groups_root') : setIsCreating(true); }} className="hover:text-white transition-colors" title="New Group">
+                                <Plus size={20} />
+                            </button>
+                        )}
                     </div>
-                    {isUserMenuOpen && <div className="fixed inset-0 z-[55]" onClick={() => setIsUserMenuOpen(false)} />}
-                    {(isAdmin || authUser?.role === 'manager') && (
-                        <button onClick={() => { onCreateGroup ? onCreateGroup('groups_root') : setIsCreating(true); }} className="hover:text-white transition-colors" title="New Group">
-                            <Plus size={20} />
-                        </button>
-                    )}
                 </div>
             </div>
 
@@ -317,8 +337,97 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
                         </div>
                     </div>
 
+                    {/* DIRECT MESSAGES SECTION */}
+                    {true && (
+                        <>
+                            <div className="px-4 py-2 text-xs font-bold text-[#8696a0] uppercase tracking-wider flex items-center justify-between group/dm-header">
+                                <span>Direct Messages</span>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); if (onDiscoveryClick) onDiscoveryClick('people'); }}
+                                    className="p-1 hover:bg-[#202c33] rounded text-[#8696a0] hover:text-white transition-colors opacity-100"
+                                    title="New Chat"
+                                >
+                                    <Plus size={14} />
+                                </button>
+                            </div>
+                            {channels
+                                .filter(c => (c.type === 'private' || c.name.startsWith('dm-')) && c.name.toLowerCase().includes(sidebarSearch.toLowerCase()))
+                                .map((channel) => {
+                                    const otherUser = channel.users?.find((u: any) => u.id !== authUser?.id);
+                                    let dmName = otherUser?.fullName;
+
+                                    if (!dmName && channel.name.startsWith('dm-')) {
+                                        const parts = channel.name.split('-');
+                                        if (parts.length === 3) {
+                                            const u1 = parseInt(parts[1]);
+                                            const u2 = parseInt(parts[2]);
+                                            if (!isNaN(u1) && !isNaN(u2)) {
+                                                const targetId = u1 === authUser?.id ? u2 : u1;
+                                                dmName = `User #${targetId}`;
+                                            }
+                                        }
+                                    }
+
+                                    dmName = dmName || 'Unknown User';
+                                    const initial = dmName[0]?.toUpperCase() || '?';
+
+                                    return (
+                                        <div
+                                            key={channel.id}
+                                            className={`group px-3 py-2 flex items-center gap-3 cursor-pointer transition-colors relative ${activeChannelId === channel.id ? 'bg-[#2a3942]' : 'hover:bg-[#202c33]'}`}
+                                            onClick={() => setActiveChannel(channel.id)}
+                                        >
+                                            <div className="relative shrink-0">
+                                                <div className="w-10 h-10 rounded-full flex items-center justify-center bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 text-sm font-bold">
+                                                    {initial}
+                                                </div>
+                                            </div>
+
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-[#e9edef] font-normal text-base truncate flex items-center gap-2">
+                                                        {dmName}
+                                                        {(notificationStats[channel.name.toLowerCase()]?.p1Count || 0) > 0 && (
+                                                            <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] h-[18px] flex items-center justify-center shadow-lg shadow-red-900/40 animate-pulse">
+                                                                {notificationStats[channel.name.toLowerCase()].p1Count}
+                                                            </span>
+                                                        )}
+                                                    </span>
+                                                    {/* Badges */}
+                                                    <div className="flex gap-1 items-center">
+                                                        {(mentionCounts[channel.id] || 0) > 0 && (
+                                                            <span className="bg-[#00a884] text-[#111b21] text-[10px] font-bold w-[18px] h-[18px] flex items-center justify-center rounded-full animate-pulse">@</span>
+                                                        )}
+                                                        {(unreadCounts[channel.id] || 0) > 0 && (
+                                                            <span className="bg-[#00a884] text-[#111b21] text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] h-[18px] flex items-center justify-center animate-bounce">
+                                                                {unreadCounts[channel.id]}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <div className="hidden group-hover:flex justify-end gap-3 text-[#aebac1]">
+                                                    <Trash2 size={16} className="hover:text-red-400" onClick={(e) => handleDeleteChannel(e, channel.id)} />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            {channels.filter(c => (c.type === 'private' || c.name.startsWith('dm-'))).length === 0 && (
+                                <div className="px-4 py-2 text-xs text-zinc-500 italic">
+                                    No direct messages yet.
+                                </div>
+                            )}
+                            <div className="h-4" />
+                        </>
+                    )}
+
+                    {/* GROUPS SECTION */}
+                    <div className="px-4 py-2 text-xs font-bold text-[#8696a0] uppercase tracking-wider flex justify-between items-center">
+                        <span>Groups</span>
+                    </div>
+
                     {channels
-                        .filter(c => c.name.toLowerCase().includes(sidebarSearch.toLowerCase()))
+                        .filter(c => (c.type !== 'private' && !c.name.startsWith('dm-')) && c.name.toLowerCase().includes(sidebarSearch.toLowerCase()))
                         .map((channel) => (
                             <Reorder.Item
                                 key={channel.id}

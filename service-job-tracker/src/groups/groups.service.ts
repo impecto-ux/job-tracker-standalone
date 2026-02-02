@@ -111,8 +111,14 @@ export class GroupsService {
         return results;
     }
 
+
+
     async findOne(id: number) {
         return this.groupsRepository.findOne({ where: { id }, relations: ['users', 'users.department', 'targetDepartment'] });
+    }
+
+    async findOneByChannelId(channelId: number) {
+        return this.groupsRepository.findOne({ where: { channelId }, relations: ['targetDepartment'] });
     }
 
     async update(id: number, updateGroupDto: any, requesterId?: number, requesterRole?: string) {

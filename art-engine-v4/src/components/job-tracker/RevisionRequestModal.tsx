@@ -32,7 +32,7 @@ export const RevisionRequestModal: React.FC<RevisionRequestModalProps> = ({ isOp
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
             <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -78,8 +78,8 @@ export const RevisionRequestModal: React.FC<RevisionRequestModalProps> = ({ isOp
                                     type="button"
                                     onClick={() => setType(t)}
                                     className={`px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all ${type === t
-                                            ? 'bg-amber-500/10 border-amber-500 text-amber-500'
-                                            : 'bg-zinc-800/50 border-white/5 text-zinc-500 hover:border-white/20'
+                                        ? 'bg-amber-500/10 border-amber-500 text-amber-500'
+                                        : 'bg-zinc-800/50 border-white/5 text-zinc-500 hover:border-white/20'
                                         }`}
                                 >
                                     {t}
@@ -105,8 +105,8 @@ export const RevisionRequestModal: React.FC<RevisionRequestModalProps> = ({ isOp
                                     type="button"
                                     onClick={() => setSeverity(val)}
                                     className={`group relative px-2 py-3 rounded-lg border transition-all overflow-hidden ${severity === val
-                                            ? 'border-white/20 text-white'
-                                            : 'bg-zinc-800/30 border-white/5 text-zinc-500 hover:bg-zinc-800'
+                                        ? 'border-white/20 text-white'
+                                        : 'bg-zinc-800/30 border-white/5 text-zinc-500 hover:bg-zinc-800'
                                         }`}
                                 >
                                     <div className={`absolute inset-0 opacity-10 ${severity === val ? color : ''}`} />

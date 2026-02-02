@@ -40,9 +40,10 @@ export interface ChatMessage {
     thumbnailUrl?: string; // v4.3 (Sharp)
     mediaType?: string; // v4.1
     replyTo?: ChatMessage; // v4.2
-    taskStatus?: 'PENDING' | 'IN_PROGRESS' | 'DONE';
+    taskStatus?: 'todo' | 'in_progress' | 'review' | 'done' | 'blocked' | 'rejected' | 'revision';
     priority?: string; // Mission Control
     isSystem?: boolean; // Mission Control
+    metadata?: any; // NEW
 }
 
 export interface ChatState {

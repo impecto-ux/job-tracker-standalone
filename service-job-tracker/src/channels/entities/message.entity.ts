@@ -33,6 +33,9 @@ export class Message {
     @Column({ nullable: true })
     mediaType: string;
 
+    @Column({ type: 'simple-json', nullable: true })
+    metadata: any;
+
     @Index()
     @CreateDateColumn()
     createdAt: Date;

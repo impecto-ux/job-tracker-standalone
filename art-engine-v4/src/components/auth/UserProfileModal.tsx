@@ -55,7 +55,7 @@ export default function UserProfileModal({ isOpen, onClose, currentUser, onUpdat
     if (!isOpen || !currentUser) return null;
 
     return (
-        <div className="absolute inset-0 z-[80] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="absolute inset-0 z-[1000] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
             <motion.div
                 initial={{ scale: 0.9, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}

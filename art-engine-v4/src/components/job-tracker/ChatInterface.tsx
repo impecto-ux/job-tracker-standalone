@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, Plus, Trash2, Edit2, X, Check, Bot, ListTodo, ArrowLeft, ArrowRight, MoreHorizontal, Shield, Terminal, Layout, Zap, AlertCircle, Copy, Reply as ReplyIcon, Forward as ForwardIcon, CheckCircle2, Minimize2, ChevronDown, CheckCheck, Download } from 'lucide-react';
+import { Send, Plus, Trash2, Edit2, X, Check, Bot, ListTodo, ArrowLeft, ArrowRight, MoreHorizontal, Shield, Terminal, Layout, Zap, AlertCircle, Copy, Reply as ReplyIcon, Forward as ForwardIcon, CheckCircle2, Minimize2, ChevronDown, CheckCheck, Download, Users as UsersIcon } from 'lucide-react';
 import { useStore, ChatMessage } from '@/lib/store';
 import api from '@/lib/api';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
@@ -18,12 +18,15 @@ interface ChatInterfaceProps {
     notificationStats?: Record<string, { p1Count: number }>;
     pendingMessage?: string | null;
     onMessageConsumed?: () => void;
-    onUnreadChange?: (total: number, counts: Record<number, number>) => void;
+    onUnreadChange?: (total: number, counts: Record<number, number>, mentionCounts: Record<number, number>) => void;
     onCreateGroup?: (view?: 'root' | 'groups_root' | 'departments_root') => void;
-    onDiscoveryClick?: () => void;
+    onDiscoveryClick?: (tab?: 'groups' | 'people') => void;
+    onMemberClick?: (member: Record<string, any>) => void; // Using Record<string, any> as a better alternative to 'any' for now, or import User
     taskStatusMap?: Record<number, string>;
     highlightMessageId?: number | null;
-    tasks?: any[]; // Authoritative Task Data
+    tasks?: Record<string, any>[]; // Authoritative Task Data
+    isMobileLayout?: boolean;
+    isChatOnly?: boolean;
 }
 
 export default function ChatInterface({
@@ -33,9 +36,12 @@ export default function ChatInterface({
     onUnreadChange,
     onCreateGroup,
     onDiscoveryClick,
+    onMemberClick,
     taskStatusMap = {},
     highlightMessageId,
-    tasks = [] // Default empty
+    tasks = [], // Default empty
+    isMobileLayout = false,
+    isChatOnly = false
 }: ChatInterfaceProps) {
     const auth = useStore(state => state.auth);
     const chat = useStore(state => state.chat);
@@ -151,18 +157,18 @@ export default function ChatInterface({
         });
 
         // Real-time Group Updates
-        socket.on('group.access_granted', (group: any) => {
+        socket.on('group.access_granted', (group: Record<string, any>) => {
             console.log('Group Access Granted, refreshing channels...', group);
             refreshChannels();
         });
 
-        socket.on('group.access_revoked', (data: any) => {
+        socket.on('group.access_revoked', (data: Record<string, any>) => {
             console.log('Group Access Revoked, refreshing channels...', data);
 
             // OPTIMISTIC REMOVAL: Remove from state immediately
             if (data.channelId) {
                 const currentChannels = useStore.getState().chat.channels;
-                chat.setChannels(currentChannels.filter((c: any) => String(c.id) !== String(data.channelId)));
+                chat.setChannels(currentChannels.filter((c: Record<string, any>) => String(c.id) !== String(data.channelId)));
             }
 
             // UI SAFETY: If the user is looking at this group, switch them away immediately
@@ -177,35 +183,35 @@ export default function ChatInterface({
             refreshChannels();
         });
 
-        socket.on('message', (msg: any) => {
+        socket.on('message', (msg: ChatMessage | Record<string, any>) => {
             const currentActiveId = useStore.getState().chat.activeChannelId;
             console.log('WS Message Received:', msg);
 
-            if (msg.channel) {
+            if ((msg as any).channel) {
                 // Safe Comparison (String/Number)
-                const isCurrentChannel = currentActiveId && String(msg.channel.id) === String(currentActiveId);
-                console.log('Is Current Channel:', isCurrentChannel, msg.channel.id, currentActiveId);
+                const isCurrentChannel = currentActiveId && String((msg as any).channel.id) === String(currentActiveId);
+                console.log('Is Current Channel:', isCurrentChannel, (msg as any).channel.id, currentActiveId);
 
                 if (isCurrentChannel) {
                     // Active channel: Append message
                     // Force update by ensuring we are passing the ID as a number if the store expects it
-                    chat.addMessage(Number(msg.channel.id), msg as ChatMessage);
+                    chat.addMessage(Number((msg as any).channel.id), msg as ChatMessage);
                 } else {
                     // Background channel: Increment unread ONLY if not from self
                     const currentUserId = useStore.getState().auth.user?.id;
-                    const isFromMe = msg.sender && (String(msg.sender.id) === String(currentUserId));
+                    const isFromMe = (msg as any).sender && (String((msg as any).sender.id) === String(currentUserId));
 
                     if (!isFromMe) {
                         setUnreadCounts(prev => ({
                             ...prev,
-                            [msg.channel.id]: (prev[msg.channel.id] || 0) + 1
+                            [(msg as any).channel.id]: (prev[(msg as any).channel.id] || 0) + 1
                         }));
 
                         const currentUserFullName = useStore.getState().auth.user?.fullName || '';
-                        if (currentUserFullName && msg.content.includes(`@${currentUserFullName}`)) {
+                        if (currentUserFullName && (msg as any).content.includes(`@${currentUserFullName}`)) {
                             setMentionCounts(prev => ({
                                 ...prev,
-                                [msg.channel.id]: (prev[msg.channel.id] || 0) + 1
+                                [(msg as any).channel.id]: (prev[(msg as any).channel.id] || 0) + 1
                             }));
                         }
                     }
@@ -213,17 +219,17 @@ export default function ChatInterface({
             }
         });
 
-        socket.on('message_deleted', (payload: any) => {
+        socket.on('message_deleted', (payload: Record<string, any>) => {
             console.log('Message Deleted:', payload);
             if (String(payload.channelId) === String(useStore.getState().chat.activeChannelId)) {
                 chat.removeMessage(Number(payload.channelId), Number(payload.messageId));
             }
         });
 
-        socket.on('message_updated', (msg: any) => {
+        socket.on('message_updated', (msg: ChatMessage | Record<string, any>) => {
             console.log('WS Message Updated:', msg);
-            if (msg.channel && msg.channel.id) {
-                chat.updateMessage(Number(msg.channel.id), msg as ChatMessage);
+            if ((msg as any).channel && (msg as any).channel.id) {
+                chat.updateMessage(Number((msg as any).channel.id), msg as ChatMessage);
             }
         });
 
@@ -240,7 +246,7 @@ export default function ChatInterface({
             }
         });
 
-        socket.on('channel_created', (channel: any) => {
+        socket.on('channel_created', (channel: Record<string, any>) => {
             console.log('WS Channel Created:', channel);
             refreshChannels();
         });
@@ -275,8 +281,8 @@ export default function ChatInterface({
     // Notify parent of total unread
     useEffect(() => {
         const total = Object.values(unreadCounts).reduce((a, b) => a + b, 0);
-        onUnreadChange?.(total, unreadCounts);
-    }, [unreadCounts, onUnreadChange]);
+        onUnreadChange?.(total, unreadCounts, mentionCounts);
+    }, [unreadCounts, mentionCounts, onUnreadChange]);
 
     const [showSystemOnly, setShowSystemOnly] = useState(false); // Action Log Filter
 
@@ -363,9 +369,9 @@ export default function ChatInterface({
                 try {
                     await api.patch(`/tasks/${replyingTo.linkedTaskId}`, { status: parsedStatus });
                     console.log(`[MissionControl] Auto-updated Task #${replyingTo.linkedTaskId} to ${parsedStatus}`);
-                } catch (e: any) {
-                    if (e.response?.status === 403) {
-                        alert(e.response?.data?.message || 'Bu işlem için yetkiniz yok.');
+                } catch (e: unknown) {
+                    if ((e as any).response?.status === 403) {
+                        alert((e as any).response?.data?.message || 'Bu işlem için yetkiniz yok.');
                     }
                     console.error(e);
                 }
@@ -376,9 +382,9 @@ export default function ChatInterface({
                     const taskId = parseInt(idMatch[1]);
                     try {
                         await api.patch(`/tasks/${taskId}`, { status: parsedStatus });
-                    } catch (e: any) {
-                        if (e.response?.status === 403) {
-                            alert(e.response?.data?.message || 'Bu işlem için yetkiniz yok.');
+                    } catch (e: unknown) {
+                        if ((e as any).response?.status === 403) {
+                            alert((e as any).response?.data?.message || 'Bu işlem için yetkiniz yok.');
                         }
                         console.error(e);
                     }
@@ -635,7 +641,7 @@ export default function ChatInterface({
     // ... inside component ...
 
     return (
-        <div className="flex h-full bg-[#0b141a] border-r border-white/10 font-sans relative">
+        <div className="flex h-full w-full bg-[#0b141a] border-r border-white/10 font-sans relative">
             {/* Context Menu Overlay */}
             {contextMenu && (
                 <div
@@ -731,22 +737,25 @@ export default function ChatInterface({
             </AnimatePresence>
 
             {/* Sidebar - Channels */}
-            <ChatSidebar
-                notificationStats={notificationStats}
-                onCreateGroup={onCreateGroup}
-                onDiscoveryClick={onDiscoveryClick}
-                unreadCounts={unreadCounts}
-                mentionCounts={mentionCounts}
-            />
+            {!isChatOnly && (
+                <ChatSidebar
+                    notificationStats={notificationStats}
+                    onCreateGroup={onCreateGroup}
+                    onDiscoveryClick={onDiscoveryClick}
+                    unreadCounts={unreadCounts}
+                    mentionCounts={mentionCounts}
+                    isMobileLayout={isMobileLayout}
+                />
+            )}
 
             {/* Main Chat Area */}
             {chat.activeChannelId === -1 ? (
-                <div className="flex-1 flex flex-col min-w-0 bg-[#0b141a] relative md:flex w-full">
+                <div className={`flex-1 flex flex-col min-w-0 bg-[#0b141a] relative ${isChatOnly ? 'flex w-full' : 'md:flex w-full'}`}>
                     <div className="h-16 bg-[#202c33] flex items-center px-4 justify-between shrink-0 z-10 border-b border-[#202c33]/50">
                         <div className="flex items-center gap-3">
                             <button
                                 onClick={() => chat.setActiveChannel(null)}
-                                className="md:hidden text-[#d1d7db] -ml-2 p-1 rounded-full hover:bg-white/5 active:bg-white/10"
+                                className={`${(isMobileLayout || isChatOnly) ? '' : 'md:hidden'} text-[#d1d7db] -ml-2 p-1 rounded-full hover:bg-white/5 active:bg-white/10`}
                             >
                                 <ArrowLeft size={24} />
                             </button>
@@ -788,8 +797,8 @@ export default function ChatInterface({
                         />
                     </div>
                 </div>
-            ) : (chat.activeChannelId && chat.channels.some(c => c.id === chat.activeChannelId)) ? (
-                <div className={`flex-1 flex flex-col min-w-0 bg-[#0b141a] relative ${chat.activeChannelId ? 'flex w-full' : 'hidden md:flex'}`}>
+            ) : (chat.activeChannelId !== null && chat.channels.some(c => String(c.id) === String(chat.activeChannelId))) ? (
+                <div className={`flex-1 flex flex-col min-w-0 bg-[#0b141a] relative ${isChatOnly ? 'flex w-full' : (chat.activeChannelId ? 'flex w-full' : (isMobileLayout ? 'hidden' : 'hidden md:flex'))}`}>
                     {/* Chat Background Pattern (Simulated with CSS) */}
                     <div className="absolute inset-0 opacity-[0.06] pointer-events-none"
                         style={{ backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")' }}>
@@ -839,17 +848,37 @@ export default function ChatInterface({
                                     {/* Mobile Back Button */}
                                     <button
                                         onClick={(e) => { e.stopPropagation(); chat.setActiveChannel(null); }}
-                                        className="md:hidden text-[#d1d7db] -ml-2 p-1 rounded-full hover:bg-white/5 active:bg-white/10 shrink-0"
+                                        className={`${isMobileLayout ? '' : 'md:hidden'} text-[#d1d7db] -ml-2 p-1 rounded-full hover:bg-white/5 active:bg-white/10 shrink-0`}
                                     >
                                         <ArrowLeft size={24} />
                                     </button>
 
                                     <div className="w-10 h-10 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 font-bold text-lg">
-                                        #
+                                        {chat.channels.find(c => String(c.id) === String(chat.activeChannelId))?.type === 'private' ? (
+                                            <UsersIcon size={20} />
+                                        ) : (
+                                            '#'
+                                        )}
                                     </div>
                                     <div className="flex flex-col">
                                         <span className="font-bold text-[#e9edef] text-base leading-tight">
-                                            {chat.channels.find(c => c.id === chat.activeChannelId)?.name}
+                                            {(() => {
+                                                const channel = chat.channels.find(c => String(c.id) === String(chat.activeChannelId));
+                                                if (channel?.type === 'private') {
+                                                    const otherUser = channel.users?.find(u => String(u.id) !== String(auth.user?.id));
+                                                    if (otherUser?.fullName) return otherUser.fullName;
+
+                                                    // Fallback to name parsing if users not populated
+                                                    if (channel.name.startsWith('dm-')) {
+                                                        const parts = channel.name.split('-');
+                                                        const u1 = parseInt(parts[1]);
+                                                        const u2 = parseInt(parts[2]);
+                                                        const otherId = u1 === auth.user?.id ? u2 : u1;
+                                                        return `User #${otherId}`;
+                                                    }
+                                                }
+                                                return channel?.name;
+                                            })()}
                                         </span>
                                         <div className="flex items-center gap-2 text-xs text-[#8696a0] truncate mt-0.5">
                                             {/* Health Stats (Active | Queue | Done Today) */}
@@ -874,7 +903,7 @@ export default function ChatInterface({
                                         </div>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-2 ml-auto pr-24">
+                                <div className="flex items-center gap-2 ml-auto shrink-0">
                                     <div className="h-6 w-px bg-white/10 shrink-0 mx-2 hidden sm:block" />
 
                                     {/* Action Log Toggle */}
@@ -916,6 +945,8 @@ export default function ChatInterface({
                         onDelete={handleDelete}
                         onLightbox={setLightboxUrl}
                         messagesEndRef={messagesEndRef}
+                        onMemberClick={onMemberClick}
+                        channelType={chat.channels.find(c => String(c.id) === String(chat.activeChannelId))?.type}
                     />
 
                     {/* Input Area */}
@@ -936,7 +967,7 @@ export default function ChatInterface({
                     />
                 </div >
             ) : (
-                <div className="flex-1 hidden md:flex flex-col items-center justify-center bg-[#222e35] text-[#e9edef] border-b-[6px] border-[#00a884]">
+                <div className={`flex-1 flex-col items-center justify-center bg-[#222e35] text-[#e9edef] border-b-[6px] border-[#00a884] ${isChatOnly ? 'flex w-full' : (isMobileLayout ? 'hidden' : 'hidden md:flex')}`}>
                     <div className="text-center space-y-4">
                         <h1 className="text-3xl font-light text-[#e9edef]">WhatsApp for Work</h1>
                         <p className="text-[#8696a0] max-w-md text-sm">Send and receive chores and keep your job organized.</p>

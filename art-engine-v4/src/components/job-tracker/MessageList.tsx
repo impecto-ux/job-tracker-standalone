@@ -16,6 +16,8 @@ interface MessageListProps {
     onDelete: (msg: any) => void;
     onLightbox: (url: string) => void;
     messagesEndRef: React.RefObject<HTMLDivElement | null>;
+    onMemberClick?: (member: any) => void;
+    channelType?: string;
 }
 
 const MessageList: React.FC<MessageListProps> = ({
@@ -30,7 +32,9 @@ const MessageList: React.FC<MessageListProps> = ({
     onReply,
     onDelete,
     onLightbox,
-    messagesEndRef
+    messagesEndRef,
+    onMemberClick,
+    channelType
 }) => {
     // Local Context Menu State (Lifted from Item via Custom Event)
     const [contextMenu, setContextMenu] = useState<{ x: number, y: number, msg: any, align?: 'up' | 'down' } | null>(null);
@@ -153,6 +157,8 @@ const MessageList: React.FC<MessageListProps> = ({
                         onReply={onReply}
                         onDelete={onDelete}
                         onLightbox={onLightbox}
+                        onMemberClick={onMemberClick}
+                        isPrivateChannel={channelType === 'private'}
                     />
                 );
             })}
