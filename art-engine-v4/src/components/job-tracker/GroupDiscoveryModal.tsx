@@ -31,7 +31,7 @@ interface UserResult {
 
 export const GroupDiscoveryModal: React.FC<GroupDiscoveryModalProps> = ({ isOpen, onClose, onJoined, initialTab = 'groups' }) => {
     const refreshChannels = useStore(state => state.chat.refreshChannels);
-    const [activeTab, setActiveTab] = useState<'groups' | 'people'>(initialTab);
+    const [activeTab, setActiveTab] = useState<'groups' | 'my_groups' | 'people'>(initialTab as any);
     const [groups, setGroups] = useState<PublicGroup[]>([]);
     const [users, setUsers] = useState<UserResult[]>([]);
     const [loading, setLoading] = useState(false);
@@ -39,16 +39,18 @@ export const GroupDiscoveryModal: React.FC<GroupDiscoveryModalProps> = ({ isOpen
 
     useEffect(() => {
         if (isOpen) {
-            setActiveTab(initialTab);
+            setActiveTab(initialTab as any);
             setSearch('');
             if (initialTab === 'groups') fetchGroups();
-            else fetchUsers();
+            else if (initialTab === 'people') fetchUsers();
+            // Default to groups if my_groups passed but logic not here yet
         }
     }, [isOpen, initialTab]);
 
     useEffect(() => {
         if (isOpen) {
             if (activeTab === 'groups') fetchGroups();
+            else if (activeTab === 'my_groups') fetchMyGroups();
             else fetchUsers();
         }
     }, [activeTab]);
@@ -60,6 +62,18 @@ export const GroupDiscoveryModal: React.FC<GroupDiscoveryModalProps> = ({ isOpen
             setGroups(res.data);
         } catch (error) {
             console.error('Failed to load public groups', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const fetchMyGroups = async () => {
+        setLoading(true);
+        try {
+            const res = await api.get('/groups/mine');
+            setGroups(res.data);
+        } catch (error) {
+            console.error('Failed to load my groups', error);
         } finally {
             setLoading(false);
         }
@@ -154,11 +168,17 @@ export const GroupDiscoveryModal: React.FC<GroupDiscoveryModalProps> = ({ isOpen
                         Public Groups
                     </button>
                     <button
+                        onClick={() => setActiveTab('my_groups')}
+                        className={`pb-3 text-sm font-bold transition-colors border-b-2 ${activeTab === 'my_groups' ? 'border-emerald-500 text-white' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
+                    >
+                        My Groups
+                    </button>
+                    <button
                         onClick={() => setActiveTab('people')}
                         className={`pb-3 text-sm font-bold transition-colors border-b-2 ${activeTab === 'people' ? 'border-emerald-500 text-white' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
                     >
                         People
-                    </button>
+                    </button> // Added My Groups tab button
                 </div>
 
                 {/* Search */}
@@ -181,11 +201,11 @@ export const GroupDiscoveryModal: React.FC<GroupDiscoveryModalProps> = ({ isOpen
                         <div className="flex h-full items-center justify-center text-gray-500">Loading...</div>
                     ) : (
                         <div className="grid grid-cols-2 gap-4">
-                            {activeTab === 'groups' ? (
+                            {activeTab === 'groups' || activeTab === 'my_groups' ? (
                                 filteredGroups.length === 0 ? (
                                     <div className="col-span-2 flex flex-col items-center justify-center h-full text-zinc-500 py-12">
                                         <Globe size={48} className="mb-4 opacity-20" />
-                                        <p>No new public groups found.</p>
+                                        <p>{activeTab === 'my_groups' ? "You haven't joined any groups yet." : "No public groups found."}</p>
                                     </div>
                                 ) : (
                                     filteredGroups.map(group => (

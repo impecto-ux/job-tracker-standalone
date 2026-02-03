@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Globe, Users, Plus, X, ListTodo, GripVertical, Edit2, Trash2, Check, MoreHorizontal, Shield } from 'lucide-react';
+import { Search, Globe, Users, Plus, X, ListTodo, GripVertical, Edit2, Trash2, Check, MoreHorizontal, Shield, ChevronDown, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import { useStore } from '@/lib/store';
 import api from '@/lib/api';
@@ -44,6 +44,8 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
     const [editingChannelId, setEditingChannelId] = useState<number | null>(null);
     const [editName, setEditName] = useState('');
     const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+    const [isDirectMessagesOpen, setIsDirectMessagesOpen] = useState(true);
+    const [isGroupsOpen, setIsGroupsOpen] = useState(true);
     const router = useRouter();
 
     const isAdmin = authUser?.role === 'admin';
@@ -340,8 +342,14 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
                     {/* DIRECT MESSAGES SECTION */}
                     {true && (
                         <>
-                            <div className="px-4 py-2 text-xs font-bold text-[#8696a0] uppercase tracking-wider flex items-center justify-between group/dm-header">
-                                <span>Direct Messages</span>
+                            <div
+                                className="px-4 py-2 text-xs font-bold text-[#8696a0] uppercase tracking-wider flex items-center justify-between group/dm-header cursor-pointer hover:text-[#cfd9df] transition-colors"
+                                onClick={() => setIsDirectMessagesOpen(!isDirectMessagesOpen)}
+                            >
+                                <div className="flex items-center gap-1">
+                                    {isDirectMessagesOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                    <span>Direct Messages</span>
+                                </div>
                                 <button
                                     onClick={(e) => { e.stopPropagation(); if (onDiscoveryClick) onDiscoveryClick('people'); }}
                                     className="p-1 hover:bg-[#202c33] rounded text-[#8696a0] hover:text-white transition-colors opacity-100"
@@ -350,83 +358,95 @@ const ChatSidebar: React.FC<ChatSidebarProps> = ({
                                     <Plus size={14} />
                                 </button>
                             </div>
-                            {channels
-                                .filter(c => (c.type === 'private' || c.name.startsWith('dm-')) && c.name.toLowerCase().includes(sidebarSearch.toLowerCase()))
-                                .map((channel) => {
-                                    const otherUser = channel.users?.find((u: any) => u.id !== authUser?.id);
-                                    let dmName = otherUser?.fullName;
 
-                                    if (!dmName && channel.name.startsWith('dm-')) {
-                                        const parts = channel.name.split('-');
-                                        if (parts.length === 3) {
-                                            const u1 = parseInt(parts[1]);
-                                            const u2 = parseInt(parts[2]);
-                                            if (!isNaN(u1) && !isNaN(u2)) {
-                                                const targetId = u1 === authUser?.id ? u2 : u1;
-                                                dmName = `User #${targetId}`;
+                            {isDirectMessagesOpen && (
+                                <>
+                                    {channels
+                                        .filter(c => (c.type === 'private' || c.name.startsWith('dm-')) && c.name.toLowerCase().includes(sidebarSearch.toLowerCase()))
+                                        .map((channel) => {
+                                            const otherUser = channel.users?.find((u: any) => u.id !== authUser?.id);
+                                            let dmName = otherUser?.fullName;
+
+                                            if (!dmName && channel.name.startsWith('dm-')) {
+                                                const parts = channel.name.split('-');
+                                                if (parts.length === 3) {
+                                                    const u1 = parseInt(parts[1]);
+                                                    const u2 = parseInt(parts[2]);
+                                                    if (!isNaN(u1) && !isNaN(u2)) {
+                                                        const targetId = u1 === authUser?.id ? u2 : u1;
+                                                        dmName = `User #${targetId}`;
+                                                    }
+                                                }
                                             }
-                                        }
-                                    }
 
-                                    dmName = dmName || 'Unknown User';
-                                    const initial = dmName[0]?.toUpperCase() || '?';
+                                            dmName = dmName || 'Unknown User';
+                                            const initial = dmName[0]?.toUpperCase() || '?';
 
-                                    return (
-                                        <div
-                                            key={channel.id}
-                                            className={`group px-3 py-2 flex items-center gap-3 cursor-pointer transition-colors relative ${activeChannelId === channel.id ? 'bg-[#2a3942]' : 'hover:bg-[#202c33]'}`}
-                                            onClick={() => setActiveChannel(channel.id)}
-                                        >
-                                            <div className="relative shrink-0">
-                                                <div className="w-10 h-10 rounded-full flex items-center justify-center bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 text-sm font-bold">
-                                                    {initial}
-                                                </div>
-                                            </div>
+                                            return (
+                                                <div
+                                                    key={channel.id}
+                                                    className={`group px-3 py-2 flex items-center gap-3 cursor-pointer transition-colors relative ${activeChannelId === channel.id ? 'bg-[#2a3942]' : 'hover:bg-[#202c33]'}`}
+                                                    onClick={() => setActiveChannel(channel.id)}
+                                                >
+                                                    <div className="w-[14px] -ml-1" />
+                                                    <div className="relative shrink-0">
+                                                        <div className="w-10 h-10 rounded-full flex items-center justify-center bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 text-sm font-bold">
+                                                            {initial}
+                                                        </div>
+                                                    </div>
 
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex justify-between items-center">
-                                                    <span className="text-[#e9edef] font-normal text-base truncate flex items-center gap-2">
-                                                        {dmName}
-                                                        {(notificationStats[channel.name.toLowerCase()]?.p1Count || 0) > 0 && (
-                                                            <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] h-[18px] flex items-center justify-center shadow-lg shadow-red-900/40 animate-pulse">
-                                                                {notificationStats[channel.name.toLowerCase()].p1Count}
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex justify-between items-center">
+                                                            <span className="text-[#e9edef] font-normal text-base truncate flex items-center gap-2">
+                                                                {dmName}
+                                                                {(notificationStats[channel.name.toLowerCase()]?.p1Count || 0) > 0 && (
+                                                                    <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] h-[18px] flex items-center justify-center shadow-lg shadow-red-900/40 animate-pulse">
+                                                                        {notificationStats[channel.name.toLowerCase()].p1Count}
+                                                                    </span>
+                                                                )}
                                                             </span>
-                                                        )}
-                                                    </span>
-                                                    {/* Badges */}
-                                                    <div className="flex gap-1 items-center">
-                                                        {(mentionCounts[channel.id] || 0) > 0 && (
-                                                            <span className="bg-[#00a884] text-[#111b21] text-[10px] font-bold w-[18px] h-[18px] flex items-center justify-center rounded-full animate-pulse">@</span>
-                                                        )}
-                                                        {(unreadCounts[channel.id] || 0) > 0 && (
-                                                            <span className="bg-[#00a884] text-[#111b21] text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] h-[18px] flex items-center justify-center animate-bounce">
-                                                                {unreadCounts[channel.id]}
-                                                            </span>
-                                                        )}
+                                                            {/* Badges */}
+                                                            <div className="flex gap-1 items-center">
+                                                                {(mentionCounts[channel.id] || 0) > 0 && (
+                                                                    <span className="bg-[#00a884] text-[#111b21] text-[10px] font-bold w-[18px] h-[18px] flex items-center justify-center rounded-full animate-pulse">@</span>
+                                                                )}
+                                                                {(unreadCounts[channel.id] || 0) > 0 && (
+                                                                    <span className="bg-[#00a884] text-[#111b21] text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] h-[18px] flex items-center justify-center animate-bounce">
+                                                                        {unreadCounts[channel.id]}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <div className="hidden group-hover:flex justify-end gap-3 text-[#aebac1]">
+                                                            <Trash2 size={16} className="hover:text-red-400" onClick={(e) => handleDeleteChannel(e, channel.id)} />
+                                                        </div>
                                                     </div>
                                                 </div>
-                                                <div className="hidden group-hover:flex justify-end gap-3 text-[#aebac1]">
-                                                    <Trash2 size={16} className="hover:text-red-400" onClick={(e) => handleDeleteChannel(e, channel.id)} />
-                                                </div>
-                                            </div>
+                                            );
+                                        })}
+                                    {channels.filter(c => (c.type === 'private' || c.name.startsWith('dm-'))).length === 0 && (
+                                        <div className="px-4 py-2 text-xs text-zinc-500 italic">
+                                            No direct messages yet.
                                         </div>
-                                    );
-                                })}
-                            {channels.filter(c => (c.type === 'private' || c.name.startsWith('dm-'))).length === 0 && (
-                                <div className="px-4 py-2 text-xs text-zinc-500 italic">
-                                    No direct messages yet.
-                                </div>
+                                    )}
+                                </>
                             )}
                             <div className="h-4" />
                         </>
                     )}
 
                     {/* GROUPS SECTION */}
-                    <div className="px-4 py-2 text-xs font-bold text-[#8696a0] uppercase tracking-wider flex justify-between items-center">
-                        <span>Groups</span>
+                    <div
+                        className="px-4 py-2 text-xs font-bold text-[#8696a0] uppercase tracking-wider flex justify-between items-center cursor-pointer hover:text-[#cfd9df] transition-colors"
+                        onClick={() => setIsGroupsOpen(!isGroupsOpen)}
+                    >
+                        <div className="flex items-center gap-1">
+                            {isGroupsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                            <span>Groups</span>
+                        </div>
                     </div>
 
-                    {channels
+                    {isGroupsOpen && channels
                         .filter(c => (c.type !== 'private' && !c.name.startsWith('dm-')) && c.name.toLowerCase().includes(sidebarSearch.toLowerCase()))
                         .map((channel) => (
                             <Reorder.Item

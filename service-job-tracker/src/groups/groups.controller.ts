@@ -36,6 +36,12 @@ export class GroupsController {
     }
 
     @UseGuards(JwtAuthGuard)
+    @Get('mine')
+    findMyGroups(@Request() req) {
+        return this.groupsService.findMyGroups(Number(req.user.userId || req.user.id));
+    }
+
+    @UseGuards(JwtAuthGuard)
     @Post(':id/join')
     joinGroup(@Param('id') id: string, @Request() req) {
         return this.groupsService.joinPublicGroup(+id, Number(req.user.userId), req.user.role);

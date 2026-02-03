@@ -115,6 +115,16 @@ export const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ onClos
     const [addToGroupDeptFilter, setAddToGroupDeptFilter] = useState<number | 'all'>('all');
     const [archiveSearchQuery, setArchiveSearchQuery] = useState('');
 
+    // Bulk Actions State
+    const [selectedUserIds, setSelectedUserIds] = useState<Set<number>>(new Set());
+    const [isBulkGroupActionOpen, setIsBulkGroupActionOpen] = useState(false);
+    const [bulkActionType, setBulkActionType] = useState<'add' | 'remove'>('add');
+
+    // Filtering & Sorting State
+    const [filterRole, setFilterRole] = useState<string>('all');
+    const [filterStatus, setFilterStatus] = useState<string>('all');
+    const [sortBy, setSortBy] = useState<string>('name-asc');
+
     useEffect(() => {
         fetchData();
         const socket = io(getApiUrl());
@@ -141,6 +151,7 @@ export const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ onClos
                 if (isEditGroupOpen) { setIsEditGroupOpen(false); return; }
                 if (isAddToGroupModalOpen) { setIsAddToGroupModalOpen(false); return; }
                 if (isAddToDeptModalOpen) { setIsAddToDeptModalOpen(false); return; }
+                if (isBulkGroupActionOpen) { setIsBulkGroupActionOpen(false); return; }
 
                 if (viewingUser) { setViewingUser(null); return; }
 
@@ -188,6 +199,74 @@ export const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ onClos
     };
 
     const getDeptTeams = (deptId: number) => teams.filter(t => t.department?.id === deptId);
+
+    // -- Bulk Handlers --
+    const toggleSelectUser = (e: React.MouseEvent, userId: number) => {
+        e.stopPropagation();
+        const newSet = new Set(selectedUserIds);
+        if (newSet.has(userId)) newSet.delete(userId);
+        else newSet.add(userId);
+        setSelectedUserIds(newSet);
+    };
+
+    const handleSelectAll = () => {
+        const displayedIds = displayUsers.map(u => u.id);
+        const allSelected = displayedIds.every(id => selectedUserIds.has(id));
+
+        if (allSelected) {
+            setSelectedUserIds(new Set());
+        } else {
+            setSelectedUserIds(new Set(displayedIds));
+        }
+    };
+
+    const handleBulkAddToGroup = async (groupId: number) => {
+        if (selectedUserIds.size === 0) return;
+        try {
+            await api.post(`/groups/${groupId}/assign`, { userIds: Array.from(selectedUserIds) });
+            alert(`Successfully added ${selectedUserIds.size} users to group.`);
+            fetchData();
+            setIsBulkGroupActionOpen(false);
+            setSelectedUserIds(new Set());
+        } catch (e) {
+            console.error(e);
+            alert('Failed to add users to group');
+        }
+    };
+
+    const handleBulkRemoveFromGroup = async (groupId: number) => {
+        if (selectedUserIds.size === 0) return;
+        if (!confirm(`Remove ${selectedUserIds.size} users from this group?`)) return;
+
+        try {
+            // Concurrent deletion
+            await Promise.all(Array.from(selectedUserIds).map(userId =>
+                api.delete(`/groups/${groupId}/members/${userId}`).catch(e => console.error(`Failed to remove user ${userId}`, e))
+            ));
+            alert('Batch removal complete.');
+            fetchData();
+            setIsBulkGroupActionOpen(false);
+            setSelectedUserIds(new Set());
+        } catch (e) {
+            alert('Error during bulk removal');
+        }
+    };
+
+    const handleBulkRemoveFromDept = async () => {
+        if (selectedUserIds.size === 0) return;
+        if (!confirm(`Remove ${selectedUserIds.size} users from their current department?`)) return;
+
+        try {
+            await Promise.all(Array.from(selectedUserIds).map(userId =>
+                api.patch(`/users/${userId}`, { department: null }).catch(e => console.error(`Failed to unassign user ${userId}`, e))
+            ));
+            alert('Batch department removal complete.');
+            fetchData();
+            setSelectedUserIds(new Set());
+        } catch (e) {
+            alert('Error during bulk department removal');
+        }
+    };
 
     // -- Handlers --
     const handleAddUsersToGroup = async () => {
@@ -432,6 +511,7 @@ export const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ onClos
 
     const getFilteredUsers = () => {
         let filtered = users;
+        // 1. Scope Filter (Tree Selection)
         if (selectedNode.type === 'dept') {
             filtered = users.filter(u => u.department?.id === selectedNode.id);
         } else if (selectedNode.type === 'team') {
@@ -441,6 +521,8 @@ export const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ onClos
         } else if (selectedNode.type === 'bots_root') {
             filtered = users.filter(u => u.isSystemBot);
         }
+
+        // 2. Search Filter
         if (searchQuery) {
             filtered = filtered.filter(u =>
                 (u.fullName && u.fullName.toLowerCase().includes(searchQuery.toLowerCase())) ||
@@ -448,6 +530,37 @@ export const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ onClos
                 (u.email?.toLowerCase().includes(searchQuery.toLowerCase()))
             );
         }
+
+        // 3. Role Filter
+        if (filterRole !== 'all') {
+            filtered = filtered.filter(u => u.role === filterRole);
+        }
+
+        // 4. Status Filter
+        if (filterStatus === 'online') {
+            filtered = filtered.filter(u => onlineUserIds.has(u.id));
+        } else if (filterStatus === 'offline') {
+            filtered = filtered.filter(u => !onlineUserIds.has(u.id));
+        }
+
+        // 5. Sorting
+        filtered = [...filtered].sort((a, b) => {
+            if (sortBy === 'name-asc') return a.fullName.localeCompare(b.fullName, undefined, { sensitivity: 'base' });
+            if (sortBy === 'name-desc') return b.fullName.localeCompare(a.fullName, undefined, { sensitivity: 'base' });
+            if (sortBy === 'role') return a.role.localeCompare(b.role, undefined, { sensitivity: 'base' });
+            if (sortBy === 'dept') {
+                const deptA = a.department?.name || '';
+                const deptB = b.department?.name || '';
+                const comparison = deptA.localeCompare(deptB, undefined, { sensitivity: 'base' });
+                // Secondary sort by name if departments are same
+                if (comparison === 0) {
+                    return a.fullName.localeCompare(b.fullName, undefined, { sensitivity: 'base' });
+                }
+                return comparison;
+            }
+            return 0;
+        });
+
         return filtered;
     };
 
@@ -485,6 +598,8 @@ export const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ onClos
                 {departments.map((dept) => {
                     const deptColor = generateColor(dept.name);
                     const isSelected = selectedNode.type === 'dept' && selectedNode.id === dept.id;
+                    const memberCount = users.filter(u => u.department?.id === dept.id).length;
+
                     return (
                         <div key={dept.id}>
                             <div
@@ -500,6 +615,7 @@ export const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ onClos
                                 </button>
                                 <Folder size={14} style={{ fill: isSelected ? `${deptColor}30` : 'none', color: isSelected ? deptColor : undefined }} className={!isSelected ? "text-zinc-400" : ""} />
                                 <span className={`text-sm truncate flex-1 ${!isSelected && 'text-zinc-400'}`}>{dept.name}</span>
+                                <span className="text-[10px] bg-white/5 px-1.5 py-0.5 rounded-full text-zinc-500">{memberCount}</span>
                             </div>
                             {/* TEAMS */}
                             <AnimatePresence>
@@ -704,6 +820,47 @@ export const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ onClos
                                 </div>
                             )}
 
+                            {/* FILTERS & SORTING TOOLBAR */}
+                            <div className="flex items-center gap-2">
+                                <CustomSelect
+                                    value={filterRole}
+                                    onChange={setFilterRole}
+                                    options={[
+                                        { value: 'all', label: 'All Roles' },
+                                        { value: 'admin', label: 'Admins' },
+                                        { value: 'manager', label: 'Managers' },
+                                        { value: 'contributor', label: 'Contributors' },
+                                        { value: 'viewer', label: 'Viewers' },
+                                    ]}
+                                    placeholder="Role"
+                                />
+                                <CustomSelect
+                                    value={filterStatus}
+                                    onChange={setFilterStatus}
+                                    options={[
+                                        { value: 'all', label: 'All Status' },
+                                        { value: 'online', label: 'Online' },
+                                        { value: 'offline', label: 'Offline' },
+                                    ]}
+                                    placeholder="Status"
+                                />
+                                <CustomSelect
+                                    value={sortBy}
+                                    onChange={setSortBy}
+                                    options={[
+                                        { value: 'name-asc', label: 'Name (A-Z)' },
+                                        { value: 'name-desc', label: 'Name (Z-A)' },
+                                        { value: 'role', label: 'Role' },
+                                        { value: 'dept', label: 'Department' },
+                                    ]}
+                                    placeholder="Sort By"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex gap-4 mb-4 justify-end">
+
+
                             {selectedNode.type === 'group' ? (
                                 <button onClick={() => setIsAddToGroupModalOpen(true)} className="flex items-center gap-2 bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors">
                                     <Plus size={14} /> Add Member
@@ -722,6 +879,23 @@ export const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ onClos
                                 </button>
                             ) : null}
                         </div>
+
+
+
+                        {/* BULK SELECTION HEADER ACTIONS */}
+                        {(selectedNode.type === 'dept' || selectedNode.type === 'team' || selectedNode.type === 'group' || selectedNode.type === 'root') && (
+                            <div className="flex items-center gap-2 mb-4">
+                                <button
+                                    onClick={handleSelectAll}
+                                    className="px-3 py-1.5 text-xs font-bold rounded bg-white/5 hover:bg-white/10 text-zinc-300 transition-colors border border-white/5"
+                                >
+                                    {displayUsers.length > 0 && displayUsers.every(u => selectedUserIds.has(u.id)) ? 'Deselect All' : 'Select All'}
+                                </button>
+                                {selectedUserIds.size > 0 && (
+                                    <span className="text-xs text-emerald-400 font-bold ml-2 animate-pulse">{selectedUserIds.size} users selected</span>
+                                )}
+                            </div>
+                        )}
 
                         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                             {/* DEPARTMENTS MANAGEMENT VIEW */}
@@ -970,9 +1144,19 @@ export const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ onClos
                                                     user.username.substring(0, 2).toUpperCase()
                                                 )}
                                             </div>
+                                            {(selectedNode.type === 'dept' || selectedNode.type === 'team' || selectedNode.type === 'group' || selectedNode.type === 'root') && (
+                                                <div
+                                                    className={`absolute top-4 right-4 z-20 transition-all ${selectedUserIds.has(user.id) ? 'opacity-100 scale-100' : 'opacity-0 scale-75 group-hover:opacity-100'}`}
+                                                    onClick={(e) => toggleSelectUser(e, user.id)}
+                                                >
+                                                    <div className={`w-5 h-5 rounded border flex items-center justify-center ${selectedUserIds.has(user.id) ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-black/40 border-zinc-500 hover:border-white'}`}>
+                                                        {selectedUserIds.has(user.id) && <Check size={12} strokeWidth={4} />}
+                                                    </div>
+                                                </div>
+                                            )}
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center gap-2 min-w-0">
-                                                    <div className="font-bold text-zinc-200 truncate">{user.fullName || user.username}</div>
+                                                    <div className="font-bold text-zinc-200 truncate pr-6">{user.fullName || user.username}</div>
                                                     {user.department && (
                                                         <span
                                                             className="text-[9px] px-1.5 py-0.5 rounded border font-bold uppercase tracking-wider shrink-0"
@@ -1015,144 +1199,202 @@ export const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ onClos
                         </div>
                     </div>
                 </div>
-            </motion.div>
+
+            </motion.div >
+
+            {/* FLOATING BULK ACTION BAR */}
+            <AnimatePresence>
+                {
+                    selectedUserIds.size > 0 && (
+                        <motion.div
+                            initial={{ y: 100, opacity: 0 }}
+                            animate={{ y: 0, opacity: 1 }}
+                            exit={{ y: 100, opacity: 0 }}
+                            className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[200] bg-[#18181b] border border-white/10 shadow-2xl rounded-2xl px-6 py-3 flex items-center gap-4"
+                        >
+                            <div className="flex items-center gap-2 text-sm font-bold border-r border-white/10 pr-4 mr-0">
+                                <div className="w-6 h-6 rounded-full bg-indigo-500 flex items-center justify-center text-white text-xs">
+                                    {selectedUserIds.size}
+                                </div>
+                                <span className="text-zinc-300">Selected</span>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => { setBulkActionType('add'); setIsBulkGroupActionOpen(true); }}
+                                    className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white text-xs font-bold transition-colors flex items-center gap-1.5"
+                                >
+                                    <Plus size={14} /> Add to Group
+                                </button>
+
+                                {selectedNode.type === 'group' && (
+                                    <button
+                                        onClick={() => handleBulkRemoveFromGroup(selectedNode.id!)}
+                                        className="px-3 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-bold transition-colors flex items-center gap-1.5 border border-red-500/20"
+                                    >
+                                        <Trash2 size={14} /> Remove from Group
+                                    </button>
+                                )}
+
+                                {selectedNode.type === 'dept' && (
+                                    <button
+                                        onClick={handleBulkRemoveFromDept}
+                                        className="px-3 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-bold transition-colors flex items-center gap-1.5 border border-red-500/20"
+                                    >
+                                        <Trash2 size={14} /> Remove from Dept
+                                    </button>
+                                )}
+
+                                <button
+                                    onClick={() => setSelectedUserIds(new Set())}
+                                    className="ml-2 p-1.5 rounded-full hover:bg-white/10 text-zinc-500 hover:text-white transition-colors"
+                                >
+                                    <X size={16} />
+                                </button>
+                            </div>
+                        </motion.div>
+                    )
+                }
+            </AnimatePresence >
 
             {/* USER DETAIL MODAL */}
             <AnimatePresence>
-                {viewingUser && (
-                    <div className="absolute inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setViewingUser(null)}>
-                        <motion.div
-                            initial={{ scale: 0.9, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.9, opacity: 0 }}
-                            onClick={e => e.stopPropagation()}
-                            className="bg-[#18181b] border border-white/10 rounded-2xl overflow-hidden shadow-2xl w-full max-w-md flex flex-col"
-                        >
-                            {/* HEADER BACKGROUND & ACTIONS */}
-                            <div className="h-32 bg-gradient-to-r from-indigo-900/40 to-purple-900/40 relative">
-                                <button
-                                    onClick={() => setViewingUser(null)}
-                                    className="absolute top-4 left-4 p-2 bg-black/20 hover:bg-black/40 rounded-full text-white transition-colors backdrop-blur-md"
-                                >
-                                    <ArrowRight size={16} className="rotate-180" />
-                                </button>
-                                <div className="absolute top-4 right-4 flex gap-2">
-                                    {auth.user?.role === 'admin' && (
-                                        <>
-                                            <button onClick={() => { setEditingUser(viewingUser); setIsEditUserOpen(true); }} className="p-2 bg-black/20 hover:bg-black/40 rounded-full text-zinc-300 hover:text-white transition-colors backdrop-blur-md"><Edit2 size={16} /></button>
-                                            <button
-                                                onClick={() => {
-                                                    if (selectedNode.type === 'group') handleRemoveFromGroup(viewingUser.id);
-                                                    else if (selectedNode.type === 'team') handleRemoveFromTeam(viewingUser.id);
-                                                    else if (selectedNode.type === 'dept') handleRemoveFromDept(viewingUser.id);
-                                                    else handleDeleteUser(viewingUser.id);
-                                                    setViewingUser(null);
-                                                }}
-                                                className="p-2 bg-black/20 hover:bg-red-500/20 rounded-full text-zinc-300 hover:text-red-400 transition-colors backdrop-blur-md"
-                                            >
-                                                <Trash2 size={16} />
-                                            </button>
-                                        </>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* AVATAR & BASIC INFO */}
-                            <div className="px-6 -mt-12 mb-4 flex items-end justify-between">
-                                <div className="w-24 h-24 rounded-3xl bg-[#09090b] p-1 shadow-2xl">
-                                    <div
-                                        className="w-full h-full rounded-2xl flex items-center justify-center text-white font-bold text-3xl shadow-inner relative overflow-hidden"
-                                        style={{
-                                            background: viewingUser.department
-                                                ? `linear-gradient(135deg, ${generateColor(viewingUser.department.name)}, ${generateColor(viewingUser.department.name)}dd)`
-                                                : 'linear-gradient(135deg, #6366f1, #a855f7)'
-                                        }}
+                {
+                    viewingUser && (
+                        <div className="absolute inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setViewingUser(null)}>
+                            <motion.div
+                                initial={{ scale: 0.9, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                exit={{ scale: 0.9, opacity: 0 }}
+                                onClick={e => e.stopPropagation()}
+                                className="bg-[#18181b] border border-white/10 rounded-2xl overflow-hidden shadow-2xl w-full max-w-md flex flex-col"
+                            >
+                                {/* HEADER BACKGROUND & ACTIONS */}
+                                <div className="h-32 bg-gradient-to-r from-indigo-900/40 to-purple-900/40 relative">
+                                    <button
+                                        onClick={() => setViewingUser(null)}
+                                        className="absolute top-4 left-4 p-2 bg-black/20 hover:bg-black/40 rounded-full text-white transition-colors backdrop-blur-md"
                                     >
-                                        {viewingUser.avatarUrl ? (
-                                            <img src={viewingUser.avatarUrl.startsWith('http') ? viewingUser.avatarUrl : `${getApiUrl()}${viewingUser.avatarUrl}`} alt={viewingUser.fullName} className="w-full h-full object-cover" />
-                                        ) : (
-                                            viewingUser.username?.substring(0, 2).toUpperCase()
-                                        )}
-                                        {/* Status Dot */}
-                                        <div className={`absolute bottom-1.5 right-1.5 w-4 h-4 rounded-full border-2 border-[#09090b] ${onlineUserIds.has(viewingUser.id) ? 'bg-emerald-500' : 'bg-zinc-600'}`} />
-                                    </div>
-                                </div>
-                                <div className="mb-2 text-right">
-                                    <span className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border ${viewingUser.role === 'admin' ? 'bg-red-500/10 text-red-500 border-red-500/20' :
-                                        viewingUser.role === 'manager' ? 'bg-purple-500/10 text-purple-500 border-purple-500/20' :
-                                            'bg-zinc-800 text-zinc-400 border-zinc-700'
-                                        }`}>
-                                        {viewingUser.role}
-                                    </span>
-                                </div>
-                            </div>
-
-                            {/* BODY */}
-                            <div className="px-6 pb-8 flex-1 flex flex-col gap-6">
-                                <div>
-                                    <h3 className="text-2xl font-bold text-white leading-tight">{viewingUser.fullName}</h3>
-                                    <p className="text-sm text-zinc-500">{viewingUser.email}</p>
-                                    {viewingUser.whatsappNumber && (
-                                        <p className="text-xs text-emerald-500/80 mt-1 flex items-center gap-1">WS: {viewingUser.whatsappNumber}</p>
-                                    )}
-                                </div>
-
-                                {/* Dept & Teams */}
-                                <div className="space-y-3 p-4 bg-white/5 rounded-xl border border-white/5">
-                                    {viewingUser.department ? (
-                                        <div className="flex items-center gap-3">
-                                            <div className="p-2 rounded bg-white/5 text-zinc-400"><Briefcase size={16} /></div>
-                                            <div>
-                                                <div className="text-[10px] text-zinc-500 uppercase font-bold">Department</div>
-                                                <div className="text-sm text-zinc-200 font-medium">{viewingUser.department.name}</div>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="text-sm text-zinc-500 italic">No department assigned</div>
-                                    )}
-
-                                    {viewingUser.teams && viewingUser.teams.length > 0 && (
-                                        <div className="pt-3 border-t border-white/5">
-                                            <div className="text-[10px] text-zinc-500 uppercase font-bold mb-2">Teams</div>
-                                            <div className="flex flex-wrap gap-2">
-                                                {viewingUser.teams.map((t: any) => (
-                                                    <span key={t.id} className="text-xs bg-black/40 border border-white/10 px-2 py-1 rounded text-zinc-300">{t.name}</span>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Groups */}
-                                <div>
-                                    <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-                                        <Hash size={12} /> Groups
-                                    </h4>
-                                    <div className="flex flex-wrap gap-2">
-                                        {viewingUser.groups && viewingUser.groups.length > 0 ? (
-                                            viewingUser.groups.map((g: any) => (
-                                                <span key={g.id} className="text-xs bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-1 rounded-lg">
-                                                    {g.name}
-                                                </span>
-                                            ))
-                                        ) : (
-                                            <span className="text-sm text-zinc-700 italic">No groups</span>
+                                        <ArrowRight size={16} className="rotate-180" />
+                                    </button>
+                                    <div className="absolute top-4 right-4 flex gap-2">
+                                        {auth.user?.role === 'admin' && (
+                                            <>
+                                                <button onClick={() => { setEditingUser(viewingUser); setIsEditUserOpen(true); }} className="p-2 bg-black/20 hover:bg-black/40 rounded-full text-zinc-300 hover:text-white transition-colors backdrop-blur-md"><Edit2 size={16} /></button>
+                                                <button
+                                                    onClick={() => {
+                                                        if (selectedNode.type === 'group') handleRemoveFromGroup(viewingUser.id);
+                                                        else if (selectedNode.type === 'team') handleRemoveFromTeam(viewingUser.id);
+                                                        else if (selectedNode.type === 'dept') handleRemoveFromDept(viewingUser.id);
+                                                        else handleDeleteUser(viewingUser.id);
+                                                        setViewingUser(null);
+                                                    }}
+                                                    className="p-2 bg-black/20 hover:bg-red-500/20 rounded-full text-zinc-300 hover:text-red-400 transition-colors backdrop-blur-md"
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            </>
                                         )}
                                     </div>
                                 </div>
 
-                                {/* Placeholder Stats Area */}
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div className="bg-zinc-900 border border-white/5 rounded-xl p-3 text-center">
-                                        <div className="text-[10px] text-zinc-500 uppercase font-bold">Activity</div>
-                                        <div className="text-xl font-bold text-emerald-400 mt-1">--</div>
+                                {/* AVATAR & BASIC INFO */}
+                                <div className="px-6 -mt-12 mb-4 flex items-end justify-between">
+                                    <div className="w-24 h-24 rounded-3xl bg-[#09090b] p-1 shadow-2xl">
+                                        <div
+                                            className="w-full h-full rounded-2xl flex items-center justify-center text-white font-bold text-3xl shadow-inner relative overflow-hidden"
+                                            style={{
+                                                background: viewingUser.department
+                                                    ? `linear-gradient(135deg, ${generateColor(viewingUser.department.name)}, ${generateColor(viewingUser.department.name)}dd)`
+                                                    : 'linear-gradient(135deg, #6366f1, #a855f7)'
+                                            }}
+                                        >
+                                            {viewingUser.avatarUrl ? (
+                                                <img src={viewingUser.avatarUrl.startsWith('http') ? viewingUser.avatarUrl : `${getApiUrl()}${viewingUser.avatarUrl}`} alt={viewingUser.fullName} className="w-full h-full object-cover" />
+                                            ) : (
+                                                viewingUser.username?.substring(0, 2).toUpperCase()
+                                            )}
+                                            {/* Status Dot */}
+                                            <div className={`absolute bottom-1.5 right-1.5 w-4 h-4 rounded-full border-2 border-[#09090b] ${onlineUserIds.has(viewingUser.id) ? 'bg-emerald-500' : 'bg-zinc-600'}`} />
+                                        </div>
+                                    </div>
+                                    <div className="mb-2 text-right">
+                                        <span className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider border ${viewingUser.role === 'admin' ? 'bg-red-500/10 text-red-500 border-red-500/20' :
+                                            viewingUser.role === 'manager' ? 'bg-purple-500/10 text-purple-500 border-purple-500/20' :
+                                                'bg-zinc-800 text-zinc-400 border-zinc-700'
+                                            }`}>
+                                            {viewingUser.role}
+                                        </span>
                                     </div>
                                 </div>
-                            </div>
-                        </motion.div>
-                    </div>
-                )}
-            </AnimatePresence>
+
+                                {/* BODY */}
+                                <div className="px-6 pb-8 flex-1 flex flex-col gap-6">
+                                    <div>
+                                        <h3 className="text-2xl font-bold text-white leading-tight">{viewingUser.fullName}</h3>
+                                        <p className="text-sm text-zinc-500">{viewingUser.email}</p>
+                                        {viewingUser.whatsappNumber && (
+                                            <p className="text-xs text-emerald-500/80 mt-1 flex items-center gap-1">WS: {viewingUser.whatsappNumber}</p>
+                                        )}
+                                    </div>
+
+                                    {/* Dept & Teams */}
+                                    <div className="space-y-3 p-4 bg-white/5 rounded-xl border border-white/5">
+                                        {viewingUser.department ? (
+                                            <div className="flex items-center gap-3">
+                                                <div className="p-2 rounded bg-white/5 text-zinc-400"><Briefcase size={16} /></div>
+                                                <div>
+                                                    <div className="text-[10px] text-zinc-500 uppercase font-bold">Department</div>
+                                                    <div className="text-sm text-zinc-200 font-medium">{viewingUser.department.name}</div>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="text-sm text-zinc-500 italic">No department assigned</div>
+                                        )}
+
+                                        {viewingUser.teams && viewingUser.teams.length > 0 && (
+                                            <div className="pt-3 border-t border-white/5">
+                                                <div className="text-[10px] text-zinc-500 uppercase font-bold mb-2">Teams</div>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {viewingUser.teams.map((t: any) => (
+                                                        <span key={t.id} className="text-xs bg-black/40 border border-white/10 px-2 py-1 rounded text-zinc-300">{t.name}</span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Groups */}
+                                    <div>
+                                        <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                            <Hash size={12} /> Groups
+                                        </h4>
+                                        <div className="flex flex-wrap gap-2">
+                                            {viewingUser.groups && viewingUser.groups.length > 0 ? (
+                                                viewingUser.groups.map((g: any) => (
+                                                    <span key={g.id} className="text-xs bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-1 rounded-lg">
+                                                        {g.name}
+                                                    </span>
+                                                ))
+                                            ) : (
+                                                <span className="text-sm text-zinc-700 italic">No groups</span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Placeholder Stats Area */}
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="bg-zinc-900 border border-white/5 rounded-xl p-3 text-center">
+                                            <div className="text-[10px] text-zinc-500 uppercase font-bold">Activity</div>
+                                            <div className="text-xl font-bold text-emerald-400 mt-1">--</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </motion.div>
+                        </div>
+                    )
+                }
+            </AnimatePresence >
 
             {/* MODALS */}
 
@@ -1517,6 +1759,41 @@ export const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ onClos
                     </div>
                 )}
             </AnimatePresence>
+
+
+            {/* BULK GROUP ACTION MODAL */}
+            <AnimatePresence>
+                {isBulkGroupActionOpen && (
+                    <div className="absolute inset-0 z-[250] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                        <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-zinc-900 border border-white/10 p-6 rounded-2xl w-96 shadow-2xl">
+                            <h2 className="text-lg font-bold text-white mb-4">
+                                {bulkActionType === 'add' ? 'Add Users to Group' : 'Remove form Group'}
+                            </h2>
+                            <p className="text-sm text-zinc-500 mb-4">
+                                Select the target group for {selectedUserIds.size} users.
+                            </p>
+                            <div className="max-h-60 overflow-y-auto space-y-1 pr-2">
+                                {groups.map(group => (
+                                    <button
+                                        key={group.id}
+                                        onClick={() => handleBulkAddToGroup(group.id)}
+                                        className="w-full flex items-center justify-between px-3 py-2 bg-black/40 hover:bg-white/5 border border-white/5 rounded-lg text-sm text-zinc-300 transition-colors group"
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <Hash size={14} className="text-blue-500" />
+                                            {group.name}
+                                        </div>
+                                        <Plus size={14} className="opacity-0 group-hover:opacity-100 text-zinc-400" />
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="flex justify-end gap-2 mt-6">
+                                <button onClick={() => setIsBulkGroupActionOpen(false)} className="px-3 py-1.5 text-xs font-bold text-zinc-400 hover:text-white">Cancel</button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
             {/* ADD MEMBERS TO GROUP MODAL */}
             <AnimatePresence>
                 {isAddToGroupModalOpen && (
@@ -1800,7 +2077,7 @@ export const UserManagementPanel: React.FC<UserManagementPanelProps> = ({ onClos
                     </div>
                 )}
             </AnimatePresence>
-        </div>
+        </div >
     );
 };
 

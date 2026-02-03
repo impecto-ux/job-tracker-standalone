@@ -1,0 +1,46 @@
+#!/bin/bash
+cat << 'EOF' > /etc/nginx/sites-available/default
+server {
+    listen 80;
+    server_name 37.148.214.203 drokten.com;
+    client_max_body_size 50M;
+
+    # Frontend (Ana Sayfa)
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection upgrade;
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    # API Yönlendirmesi (No rewrite - backend uses global prefix 'api')
+    location /api/ {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection upgrade;
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    # Socket.IO
+    location /socket.io/ {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection upgrade;
+        proxy_set_header Host $host;
+    }
+}
+EOF
+
+# Ensure sites-enabled is synced
+cp /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
+
+# Test and restart
+nginx -t && systemctl restart nginx
+
+echo "===== NGINX RE-DEPLOYED ====="
+cat /etc/nginx/sites-enabled/default | grep -A 1 "/api/"

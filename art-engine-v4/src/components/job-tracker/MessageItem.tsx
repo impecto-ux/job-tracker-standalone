@@ -289,8 +289,32 @@ const MessageItem: React.FC<MessageItemProps> = ({
             <motion.div
                 initial={{ opacity: 0, x: isMe ? 20 : -20 }}
                 animate={{ opacity: 1, x: 0 }}
-                className={`flex w-full mb-3 px-4 relative ${isMe ? 'justify-end' : 'justify-start'}`}
+                className={`flex w-full mb-3 px-4 relative ${isMe ? 'justify-end' : 'justify-start'} ${isSelectionMode ? 'cursor-pointer' : ''}`}
+                onClick={(e) => {
+                    if (isSelectionMode) {
+                        e.stopPropagation();
+                        onToggleSelect(msg.id);
+                    }
+                }}
             >
+                {/* Selection Checkbox */}
+                <AnimatePresence>
+                    {isSelectionMode && (
+                        <motion.div
+                            initial={{ width: 0, opacity: 0, marginRight: 0 }}
+                            animate={{ width: 30, opacity: 1, marginRight: 10 }}
+                            exit={{ width: 0, opacity: 0, marginRight: 0 }}
+                            className="overflow-hidden shrink-0 flex items-center justify-center self-center"
+                        >
+                            <div
+                                onClick={(e) => { e.stopPropagation(); onToggleSelect(msg.id); }}
+                                className={`w-5 h-5 rounded-full border-2 flex items-center justify-center cursor-pointer transition-all ${isSelected ? 'bg-[#00a884] border-[#00a884]' : 'border-zinc-500 hover:border-white'}`}
+                            >
+                                {isSelected && <Check size={14} className="text-black font-bold" />}
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
                 {/* Background Decoration (Initial) */}
                 <div className={`absolute inset-0 flex pointer-events-none select-none overflow-hidden opacity-[0.03] ${isMe ? 'justify-end pr-10' : 'justify-start pl-10'}`}>
                     <span className="text-[100px] font-black italic tracking-tighter text-white -mt-4">
@@ -313,6 +337,14 @@ const MessageItem: React.FC<MessageItemProps> = ({
                         )}
 
                         <div className="p-3">
+                            {/* Forwarded Label */}
+                            {msg.metadata?.isForwarded && (
+                                <div className="flex items-center gap-1 mb-1 text-[10px] text-zinc-400 italic font-medium select-none">
+                                    <ArrowLeft size={12} className="rotate-180" />
+                                    Forwarded
+                                </div>
+                            )}
+
                             {/* Reply Context (Glassy) */}
                             {msg.replyTo && (
                                 <div className="rounded-lg p-2 mb-2 text-xs border-l-2 bg-white/5 border-white/20 opacity-80 backdrop-blur-md">

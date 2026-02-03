@@ -145,10 +145,50 @@ export default function ChatInterface({
     const [unreadCounts, setUnreadCounts] = useState<Record<number, number>>({});
     const [mentionCounts, setMentionCounts] = useState<Record<number, number>>({}); // Mention Badge State
 
+    // Stable ref for message handling to avoid listener re-binding
+    const handleMessage = useCallback((msg: any) => {
+        const currentActiveId = useStore.getState().chat.activeChannelId;
+        console.log('WS Message Received:', msg);
+
+        if (msg && msg.channel) {
+            const msgChannelId = Number(msg.channel.id);
+            const activeId = currentActiveId !== null ? Number(currentActiveId) : null;
+            const isCurrentChannel = activeId !== null && msgChannelId === activeId;
+
+            console.log(`[Socket] Channel check: msg=${msgChannelId}, active=${activeId}, match=${isCurrentChannel}`);
+
+            if (isCurrentChannel) {
+                useStore.getState().chat.addMessage(msgChannelId, msg);
+            } else {
+                const currentUserId = useStore.getState().auth.user?.id;
+                const isFromMe = msg.sender && (Number(msg.sender.id) === Number(currentUserId));
+
+                if (!isFromMe) {
+                    setUnreadCounts(prev => ({
+                        ...prev,
+                        [msgChannelId]: (prev[msgChannelId] || 0) + 1
+                    }));
+
+                    const currentUserFullName = useStore.getState().auth.user?.fullName || '';
+                    if (currentUserFullName && msg.content && msg.content.includes(`@${currentUserFullName}`)) {
+                        setMentionCounts(prev => ({
+                            ...prev,
+                            [msgChannelId]: (prev[msgChannelId] || 0) + 1
+                        }));
+                    }
+                }
+            }
+        }
+    }, [auth.user?.id]);
+
     // Socket Connection
     useEffect(() => {
+        if (!auth.user?.id) return;
+
+        console.log('[Socket] Initializing connection for user:', auth.user.id);
         const socket = io(getSocketUrl(), {
-            query: { userId: auth.user?.id }
+            query: { userId: auth.user.id },
+            transports: ['websocket', 'polling'] // Prefer websocket
         });
         setSocketInstance(socket);
 
@@ -183,41 +223,7 @@ export default function ChatInterface({
             refreshChannels();
         });
 
-        socket.on('message', (msg: ChatMessage | Record<string, any>) => {
-            const currentActiveId = useStore.getState().chat.activeChannelId;
-            console.log('WS Message Received:', msg);
-
-            if ((msg as any).channel) {
-                // Safe Comparison (String/Number)
-                const isCurrentChannel = currentActiveId && String((msg as any).channel.id) === String(currentActiveId);
-                console.log('Is Current Channel:', isCurrentChannel, (msg as any).channel.id, currentActiveId);
-
-                if (isCurrentChannel) {
-                    // Active channel: Append message
-                    // Force update by ensuring we are passing the ID as a number if the store expects it
-                    chat.addMessage(Number((msg as any).channel.id), msg as ChatMessage);
-                } else {
-                    // Background channel: Increment unread ONLY if not from self
-                    const currentUserId = useStore.getState().auth.user?.id;
-                    const isFromMe = (msg as any).sender && (String((msg as any).sender.id) === String(currentUserId));
-
-                    if (!isFromMe) {
-                        setUnreadCounts(prev => ({
-                            ...prev,
-                            [(msg as any).channel.id]: (prev[(msg as any).channel.id] || 0) + 1
-                        }));
-
-                        const currentUserFullName = useStore.getState().auth.user?.fullName || '';
-                        if (currentUserFullName && (msg as any).content.includes(`@${currentUserFullName}`)) {
-                            setMentionCounts(prev => ({
-                                ...prev,
-                                [(msg as any).channel.id]: (prev[(msg as any).channel.id] || 0) + 1
-                            }));
-                        }
-                    }
-                }
-            }
-        });
+        socket.on('message', handleMessage);
 
         socket.on('message_deleted', (payload: Record<string, any>) => {
             console.log('Message Deleted:', payload);
@@ -252,9 +258,10 @@ export default function ChatInterface({
         });
 
         return () => {
+            console.log('[Socket] Disconnecting...');
             socket.disconnect();
         };
-    }, [auth.user?.id, refreshChannels]); // Added dependencies for reconnection and fresh listeners
+    }, [auth.user?.id, handleMessage]); // Stable dependencies
 
     // Clear unread on channel select
     useEffect(() => {
@@ -542,8 +549,8 @@ export default function ChatInterface({
                         content: msg.content, // Forward content
                         mediaUrl: msg.mediaUrl,
                         thumbnailUrl: msg.thumbnailUrl,
-                        mediaType: msg.mediaType
-                        // We could add connection to original sender here if schema supports it
+                        mediaType: msg.mediaType,
+                        metadata: { isForwarded: true }
                     });
                 }
             }

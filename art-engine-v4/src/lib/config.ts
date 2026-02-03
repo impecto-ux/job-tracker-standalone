@@ -8,14 +8,14 @@ export const getBaseUrl = () => {
     const protocol = window.location.protocol;
 
     // Production Cloud
-    if (hostname === '37.148.214.203') {
-        return 'http://37.148.214.203';
+    if (hostname === '37.148.214.203' || hostname === 'drokten.com') {
+        return `${protocol}//${hostname}`;
     }
 
     // Localhost / LAN
-    // Force 127.0.0.1 for reliability against IPv6/localhost stalls
+    // Force connection to REMOTE backend for local development
     if (hostname === 'localhost' || hostname === '127.0.0.1') {
-        return `${protocol}//127.0.0.1:3001`;
+        return 'http://localhost:3001';
     }
     return `${protocol}//${hostname}:3001`;
 };
@@ -27,9 +27,5 @@ export const getSocketUrl = () => {
 
 // API URL needs /api prefix for Nginx to proxy correctly
 export const getApiUrl = () => {
-    const base = getBaseUrl();
-    if (base.includes('37.148.214.203')) {
-        return `${base}/api`;
-    }
-    return base;
+    return `${getBaseUrl()}/api`;
 };

@@ -480,4 +480,19 @@ export class GroupsService {
         // Allow leaving any group (even private ones if they are in it)
         return this.removeUserFromGroup(groupId, userId, userId); // Remover = Self
     }
+    async findMyGroups(userId: number) {
+        const groups = await this.groupsRepository.createQueryBuilder('group')
+            .innerJoin('group.users', 'currentUser', 'currentUser.id = :userId', { userId })
+            .leftJoinAndSelect('group.users', 'users')
+            .getMany();
+
+        return groups.map(g => ({
+            id: g.id,
+            name: g.name,
+            description: g.description,
+            isMember: true,
+            memberCount: g.users?.length || 0,
+            isPrivate: g.isPrivate
+        }));
+    }
 }

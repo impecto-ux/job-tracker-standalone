@@ -282,7 +282,7 @@ export class ChannelsService implements OnApplicationBootstrap {
         console.log(`[ChannelsService] postMessage: "${content}" @ Channel ${channelId}`);
         const channel = await this.channelsRepository.findOne({
             where: { id: channelId },
-            relations: ['users']
+            relations: ['users', 'targetDepartment']
         });
         if (!channel) throw new Error('Channel not found');
 
@@ -482,10 +482,23 @@ export class ChannelsService implements OnApplicationBootstrap {
 
             if (jobData && ['P1', 'P2', 'P3'].includes(finalPriority)) {
                 let dept;
-                try {
-                    dept = await this.departmentsService.findOrCreateByName(channel.name);
-                } catch (e) {
-                    dept = { id: 1, name: 'General' } as any;
+
+                // FIX: Do not auto-create departments from Group names.
+                // 1. Use the channel's linked target department if it exists
+                if (channel.targetDepartment) {
+                    dept = channel.targetDepartment;
+                }
+                // 2. Only if the channel ITSELF is a department channel, ensure it exists
+                else if (channel.type === 'department') {
+                    try {
+                        dept = await this.departmentsService.findOrCreateByName(channel.name);
+                    } catch (e) {
+                        dept = await this.departmentsService.findOrCreateByName('General');
+                    }
+                }
+                // 3. Fallback to 'General' (never create a Dept from a private/group channel name)
+                else {
+                    dept = await this.departmentsService.findOrCreateByName('General');
                 }
 
                 const taskDto = new CreateTaskDto();

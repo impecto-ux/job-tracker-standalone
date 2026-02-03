@@ -36,8 +36,8 @@ import { NotificationsModule } from './notifications/notifications.module';
       useFactory: (configService: ConfigService) => ({
         type: 'sqlite',
         database: 'job_tracker.sqlite',
-        entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        synchronize: true, // Auto-create tables (Dev only)
+        entities: [join(__dirname, '**', '*.entity.{ts,js}')],
+        synchronize: true,
       }),
       inject: [ConfigService],
     }),

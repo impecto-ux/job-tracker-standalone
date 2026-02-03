@@ -145,10 +145,12 @@ export class TasksService implements OnApplicationBootstrap {
             console.log(`  - Group: ${fullGroup.name} (Dept: ${fullGroup.targetDepartment.name})`);
             console.log(`  - User: ${user.username} (Dept ID: ${userDeptId || 'None'})`);
 
-            // Check if user's department matches the group's target department
-            if (userDeptId !== allowedDeptId) {
+            const isGroupMember = fullGroup.users.some(u => u.id === userId);
+
+            // Check if user's department matches the group's target department OR if they are an explicit member
+            if (userDeptId !== allowedDeptId && !isGroupMember) {
               throw new ForbiddenException(
-                `NO PERMISSION: Only members of '${fullGroup.targetDepartment.name}' can work on tasks in '${fullGroup.name}'.`
+                `NO PERMISSION: Only members of '${fullGroup.targetDepartment.name}' or explicit group members can work on tasks in '${fullGroup.name}'.`
               );
             }
 
