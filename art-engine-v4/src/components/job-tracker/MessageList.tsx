@@ -42,7 +42,16 @@ const MessageList: React.FC<MessageListProps> = ({
     // Event Listener for Item Context Menu Trigger
     useEffect(() => {
         const handleOpenMenu = (e: any) => {
-            const { rect, msg } = e.detail;
+            const { rect: dataRect, msg, event: rawEvent } = e.detail;
+
+            // Defensive extraction: Use passed rect or extract from raw event if available
+            const rect = dataRect || (rawEvent?.currentTarget?.getBoundingClientRect?.());
+
+            if (!rect) {
+                console.warn('[MessageList] Could not determine position for context menu');
+                return;
+            }
+
             const menuWidth = 200;
             const spaceBelow = window.innerHeight - rect.bottom;
             const align = spaceBelow < 250 ? 'up' : 'down';
