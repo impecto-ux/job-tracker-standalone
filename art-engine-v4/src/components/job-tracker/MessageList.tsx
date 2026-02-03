@@ -42,12 +42,21 @@ const MessageList: React.FC<MessageListProps> = ({
     // Event Listener for Item Context Menu Trigger
     useEffect(() => {
         const handleOpenMenu = (e: any) => {
-            const { event, msg } = e.detail;
-            const rect = event.currentTarget.getBoundingClientRect();
+            const { rect, msg } = e.detail;
+            const menuWidth = 200;
             const spaceBelow = window.innerHeight - rect.bottom;
             const align = spaceBelow < 250 ? 'up' : 'down';
+
+            let x = rect.left;
+            // If menu would go off-screen on the right, align to right side of button
+            if (x + menuWidth > window.innerWidth - 20) {
+                x = rect.right - menuWidth;
+            }
+            // Ensure safe margin from left
+            x = Math.max(20, x);
+
             const y = align === 'down' ? rect.bottom : rect.top;
-            setContextMenu({ x: rect.right - 150, y, msg, align });
+            setContextMenu({ x, y, msg, align });
         };
 
         window.addEventListener('open-msg-menu', handleOpenMenu);

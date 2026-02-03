@@ -456,7 +456,11 @@ const MessageItem: React.FC<MessageItemProps> = ({
 
                         {/* Dropdown Arrow (New Premium Version) */}
                         <button
-                            onClick={(e) => { e.stopPropagation(); (window as any).dispatchEvent(new CustomEvent('open-msg-menu', { detail: { event: e, msg } })); }}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                (window as any).dispatchEvent(new CustomEvent('open-msg-menu', { detail: { rect, msg } }));
+                            }}
                             className="absolute top-0 right-0 p-1.5 opacity-0 group-hover:opacity-100 transition-opacity bg-white/5 hover:bg-white/10 rounded-bl-xl border-l border-b border-white/5"
                         >
                             <MoreHorizontal size={12} className="text-white/60" />
@@ -617,14 +621,8 @@ const MessageItem: React.FC<MessageItemProps> = ({
                             <button
                                 onClick={(e) => {
                                     e.stopPropagation();
-                                    // TRIGGER PARENT MENU
-                                    // I need to add onOpenMenu prop.
-                                    // For now, I'll alert or fail?
-                                    // NO, I will add the prop to the interface above.
-                                    // onContextMenu(e, msg);
-                                    // Since I haven't added it yet, I will use a callback passed in.
-                                    // See updated interface below.
-                                    (window as any).dispatchEvent(new CustomEvent('open-msg-menu', { detail: { event: e, msg } }));
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    (window as any).dispatchEvent(new CustomEvent('open-msg-menu', { detail: { rect, msg } }));
                                 }}
                                 className={`absolute top-0 right-0 m-1 w-6 h-6 rounded-full bg-black/30 hover:bg-black/50 text-white/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10`}
                                 title="Message options"
