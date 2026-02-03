@@ -160,6 +160,16 @@ export class GroupsService {
             // Update other fields normally
             if (Object.keys(updateGroupDto).length > 0) {
                 await this.groupsRepository.update(id, updateGroupDto);
+
+                // SYNC NAME TO CHANNEL IF CHANGED
+                if (updateGroupDto.name && group.channelId) {
+                    try {
+                        await this.channelsService.updateChannel(group.channelId, updateGroupDto.name);
+                        console.log(`[GroupsService] Synced group name change to channel ${group.channelId}`);
+                    } catch (e) {
+                        console.error(`[GroupsService] Failed to sync group name to channel`, e);
+                    }
+                }
             }
 
             return this.findOne(id);

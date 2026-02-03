@@ -62,4 +62,8 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
         console.log(`[ChatGateway] Emitting group.access_revoked to ${roomName} for groupId ${groupId}, channelId ${channelId}`);
         this.server.to(roomName).emit('group.access_revoked', { groupId, channelId });
     }
+
+    broadcastChannelUpdated(channel: any) {
+        this.server.emit('channel_updated', channel);
+    }
 }

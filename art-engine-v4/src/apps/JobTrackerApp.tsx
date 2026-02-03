@@ -385,6 +385,11 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                 setTasks(prev => prev.filter(t => String(t.id) !== String(id)));
             });
 
+            socket.on('channel_updated', (updatedChannel: any) => {
+                console.log('[WS] Channel Updated:', updatedChannel);
+                chat.setChannels(chat.channels.map(c => c.id === updatedChannel.id ? { ...c, ...updatedChannel } : c));
+            });
+
             // Keep a slower poll just for auth/token sync if needed, or rely on other mechanisms
             // For now, we'll remove the task polling but keep the auth check in a separate effect if strictly needed.
             // Actually, let's keep a very slow poll (30s) for "safety" sync

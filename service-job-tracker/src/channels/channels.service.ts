@@ -137,13 +137,16 @@ export class ChannelsService implements OnApplicationBootstrap {
         await this.channelsRepository.update(id, updateData);
         const updated = await this.channelsRepository.findOne({ where: { id }, relations: ['users', 'targetDepartment'] });
 
-        return {
+        const response = {
             id: updated?.id,
             name: updated?.name,
             type: updated?.type,
             targetDepartment: updated?.targetDepartment ? { id: updated.targetDepartment.id, name: updated.targetDepartment.name } : null,
             users: updated?.users?.map(u => ({ id: u.id, fullName: u.fullName }))
         };
+
+        this.chatGateway.broadcastChannelUpdated(response);
+        return response;
     }
 
     async deleteChannel(id: number) {
