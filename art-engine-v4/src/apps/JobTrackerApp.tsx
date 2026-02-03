@@ -387,7 +387,8 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
 
             socket.on('channel_updated', (updatedChannel: any) => {
                 console.log('[WS] Channel Updated:', updatedChannel);
-                chat.setChannels(chat.channels.map(c => c.id === updatedChannel.id ? { ...c, ...updatedChannel } : c));
+                const currentChannels = useStore.getState().chat.channels;
+                chat.setChannels(currentChannels.map(c => c.id === updatedChannel.id ? { ...c, ...updatedChannel } : c));
             });
 
             // Keep a slower poll just for auth/token sync if needed, or rely on other mechanisms

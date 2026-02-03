@@ -31,23 +31,23 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
 
     // Method to broadcast a message to all clients
     broadcastMessage(message: any) {
-        this.server.emit('message', message);
+        if (this.server) this.server.emit('message', message);
     }
 
     broadcastChannelDeleted(channelId: number) {
-        this.server.emit('channel_deleted', { id: channelId });
+        if (this.server) this.server.emit('channel_deleted', { id: channelId });
     }
 
     broadcastMessageDeleted(messageId: number, channelId: number) {
-        this.server.emit('message_deleted', { messageId, channelId });
+        if (this.server) this.server.emit('message_deleted', { messageId, channelId });
     }
 
     broadcastMessageUpdated(message: any) {
-        this.server.emit('message_updated', message);
+        if (this.server) this.server.emit('message_updated', message);
     }
 
     broadcastChannelCreated(channel: any) {
-        this.server.emit('channel_created', channel);
+        if (this.server) this.server.emit('channel_created', channel);
     }
 
     // Real-time Group Notifications
@@ -64,6 +64,6 @@ export class ChatGateway implements OnGatewayInit, OnGatewayConnection, OnGatewa
     }
 
     broadcastChannelUpdated(channel: any) {
-        this.server.emit('channel_updated', channel);
+        if (this.server) this.server.emit('channel_updated', channel);
     }
 }
