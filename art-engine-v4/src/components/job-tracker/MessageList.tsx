@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { ArrowLeft, Layout, Trash2, Edit2, Shield, AlertCircle, Download } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import MessageItem from './MessageItem';
@@ -42,13 +43,16 @@ const MessageList: React.FC<MessageListProps> = ({
     // Event Listener for Item Context Menu Trigger
     useEffect(() => {
         const handleOpenMenu = (e: any) => {
-            const { rect: dataRect, msg, event: rawEvent } = e.detail;
+            const detail = e?.detail;
+            if (!detail) return;
 
-            // Defensive extraction: Use passed rect or extract from raw event if available
-            const rect = dataRect || (rawEvent?.currentTarget?.getBoundingClientRect?.());
+            const dataRect = detail.rect;
+            const msg = detail.msg;
 
-            if (!rect) {
-                console.warn('[MessageList] Could not determine position for context menu');
+            // Use passed rect or bail
+            const rect = dataRect;
+
+            if (!rect || typeof rect.bottom !== 'number') {
                 return;
             }
 
@@ -86,10 +90,10 @@ const MessageList: React.FC<MessageListProps> = ({
 
     return (
         <div className="flex-1 overflow-y-auto p-4 space-y-1 z-10 custom-scrollbar relative">
-            {/* Context Menu Overlay */}
-            {contextMenu && (
+            {/* Context Menu Overlay - Rendered using Portal to document.body */}
+            {contextMenu && typeof document !== 'undefined' && createPortal(
                 <div
-                    className="fixed z-[70] bg-[#233138] rounded-lg shadow-xl border border-white/5 py-1 min-w-[200px]"
+                    className="fixed z-[9999] bg-[#233138] rounded-lg shadow-2xl border border-white/10 py-1 min-w-[200px] backdrop-blur-xl"
                     style={{
                         top: contextMenu.align === 'up' ? undefined : contextMenu.y,
                         bottom: contextMenu.align === 'up' ? (window.innerHeight - contextMenu.y) : undefined,
@@ -127,7 +131,7 @@ const MessageList: React.FC<MessageListProps> = ({
                             <button onClick={() => { alert('Edit not implemented'); setContextMenu(null); }} className="w-full text-left px-4 py-2 hover:bg-[#111b21] text-[#d1d7db] text-sm flex items-center gap-3">
                                 <Edit2 size={16} /> Edit
                             </button>
-                            <button onClick={() => { onDelete(contextMenu.msg); setContextMenu(null); }} className="w-full text-left px-4 py-2 hover:bg-[#111b21] text-red-400 text-sm flex items-center gap-3">
+                            <button onClick={() => { onDelete(contextMenu.msg); setContextMenu(null); }} className="w-full text-left px-4 py-2 hover:bg-[#111b21] text-red-500 text-sm flex items-center gap-3">
                                 <Trash2 size={16} /> Delete
                             </button>
                         </>
@@ -140,7 +144,8 @@ const MessageList: React.FC<MessageListProps> = ({
                             </button>
                         </>
                     )}
-                </div>
+                </div>,
+                document.body
             )}
 
             {messages.map((msg, index) => {
