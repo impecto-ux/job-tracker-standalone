@@ -2,7 +2,12 @@
 
 import React from 'react';
 import { useRouter } from 'next/navigation';
-import { AdminDashboard } from '@/components/job-tracker/AdminDashboard';
+import dynamic from 'next/dynamic';
+
+const AdminDashboard = dynamic(
+    () => import('@/components/job-tracker/AdminDashboard').then((mod) => mod.AdminDashboard),
+    { ssr: false }
+);
 
 export default function AdminPage() {
     const router = useRouter();
