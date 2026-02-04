@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, Layout, Trash2, Edit2, Shield, AlertCircle, Download } from 'lucide-react';
+import { ArrowLeft, Layout, Trash2, Edit2, Shield, AlertCircle, Download, Forward as ForwardIcon } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import MessageItem from './MessageItem';
 
@@ -15,6 +15,7 @@ interface MessageListProps {
     onToggleSelect: (id: number) => void;
     onReply: (msg: any) => void;
     onDelete: (msg: any) => void;
+    onForward: (msg: any) => void;
     onLightbox: (url: string) => void;
     messagesEndRef: React.RefObject<HTMLDivElement | null>;
     onMemberClick?: (member: any) => void;
@@ -32,6 +33,7 @@ const MessageList: React.FC<MessageListProps> = ({
     onToggleSelect,
     onReply,
     onDelete,
+    onForward,
     onLightbox,
     messagesEndRef,
     onMemberClick,
@@ -103,6 +105,9 @@ const MessageList: React.FC<MessageListProps> = ({
                 >
                     <button onClick={() => { onReply(contextMenu.msg); setContextMenu(null); }} className="w-full text-left px-4 py-2 hover:bg-[#111b21] text-[#d1d7db] text-sm flex items-center gap-3">
                         <ArrowLeft size={16} /> Reply
+                    </button>
+                    <button onClick={() => { onForward(contextMenu.msg); setContextMenu(null); }} className="w-full text-left px-4 py-2 hover:bg-[#111b21] text-[#d1d7db] text-sm flex items-center gap-3">
+                        <ForwardIcon size={16} /> Forward
                     </button>
                     <button onClick={() => { navigator.clipboard.writeText(contextMenu.msg.content); setContextMenu(null); }} className="w-full text-left px-4 py-2 hover:bg-[#111b21] text-[#d1d7db] text-sm flex items-center gap-3">
                         <Layout size={16} /> Copy

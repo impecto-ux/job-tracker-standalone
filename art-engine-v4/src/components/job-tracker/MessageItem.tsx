@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, Bot, Terminal, Zap, Trash2, Edit2, ArrowLeft, Layout, AlertCircle, Shield, MoreHorizontal } from 'lucide-react';
+import { Check, Bot, Terminal, Zap, Trash2, Edit2, ArrowLeft, Layout, AlertCircle, Shield, MoreHorizontal, Forward } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface MessageItemProps {
@@ -38,6 +38,23 @@ const MessageItem: React.FC<MessageItemProps> = ({
     isPrivateChannel
 }) => {
     console.log('[DEBUG] Rendering MessageItem:', msg.id);
+    // Unified Metadata Parsing
+    const metadata = React.useMemo(() => {
+        if (!msg.metadata) return null;
+        let data = msg.metadata;
+        if (typeof data === 'string') {
+            try { data = JSON.parse(data); } catch (e) { return null; }
+        }
+        // Map common keys for robustness
+        return {
+            ...data,
+            isForwarded: data.isForwarded || data.is_forwarded || data.forwarded,
+            fromChannelName: data.fromChannelName || data.from_channel_name || data.source_channel
+        };
+    }, [msg.metadata]);
+
+    const isForwarded = !!metadata?.isForwarded;
+
     // Local Context Menu State
     const [contextMenu, setContextMenu] = React.useState<{ x: number, y: number, msg: any, align?: 'up' | 'down' } | null>(null);
 
@@ -330,7 +347,12 @@ const MessageItem: React.FC<MessageItemProps> = ({
 
                     <div className={`relative backdrop-blur-xl border rounded-2xl overflow-hidden shadow-xl
                         ${isTask ? (isMe ? 'bg-indigo-500/10 border-indigo-500/40' : 'bg-indigo-900/30 border-indigo-500/30') : 'bg-black/40 border-white/10'}
+                        ${isForwarded ? 'border-emerald-500/30 ring-1 ring-emerald-500/10' : ''}
                     `}>
+                        {/* Forwarded Accent Line */}
+                        {isForwarded && (
+                            <div className="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500/40" />
+                        )}
                         {/* Task Progress Header (Optional) */}
                         {isTask && (
                             <div className={`h-1 w-full ${taskStatus === 'done' ? 'bg-emerald-500' : taskStatus === 'in_progress' ? 'bg-blue-500' : 'bg-zinc-500'}`} />
@@ -338,12 +360,13 @@ const MessageItem: React.FC<MessageItemProps> = ({
 
                         <div className="p-3">
                             {/* Forwarded Label */}
-                            {msg.metadata?.isForwarded && (
-                                <div className="flex items-center gap-1 mb-1 text-[10px] text-zinc-400 italic font-medium select-none">
-                                    <ArrowLeft size={12} className="rotate-180" />
-                                    Forwarded
+                            {isForwarded && (
+                                <div className="flex items-center gap-1.5 mb-1.5 text-[10px] text-emerald-400 italic font-bold select-none px-1">
+                                    <Forward size={12} className="shrink-0" />
+                                    <span>Forwarded {metadata?.fromChannelName ? `from ${metadata.fromChannelName}` : ''}</span>
                                 </div>
                             )}
+
 
                             {/* Reply Context (Glassy) */}
                             {msg.replyTo && (
@@ -423,13 +446,13 @@ const MessageItem: React.FC<MessageItemProps> = ({
                                             <div className={`w-2 h-2 rounded-full shadow-[0_0_8px] transition-all duration-700 ${taskStatus === 'review' ? 'bg-purple-500 shadow-purple-500/80 ring-2 ring-purple-500/20 animate-pulse' : 'bg-zinc-800'}`} />
 
                                             {/* DONE / REJECTED / REVISION */}
-                                            <div className={`w-2 h-2 rounded-full shadow-[0_0_8px] transition-all duration-700 
+                                            <div className={`w-2 h-2 rounded-full shadow-[0_0_8px] transition-all duration-700
                                                  ${taskStatus === 'done' ? 'bg-emerald-400 shadow-emerald-400/80 ring-2 ring-emerald-400/20' :
                                                     (taskStatus === 'rejected' || msg.metadata?.deletionReason) ? 'bg-red-500 shadow-red-500/80 ring-2 ring-red-500/20' :
                                                         taskStatus === 'revision' ? 'bg-amber-500 shadow-amber-500/80 ring-2 ring-amber-500/20 animate-bounce' : 'bg-zinc-800'}`}
                                             />
                                         </div>
-                                        <span className={`text-[9px] font-black uppercase tracking-wider ml-1 
+                                        <span className={`text-[9px] font-black uppercase tracking-wider ml-1
                                              ${taskStatus === 'done' ? 'text-emerald-400' :
                                                 (taskStatus === 'rejected' || msg.metadata?.deletionReason) ? 'text-red-400' :
                                                     taskStatus === 'in_progress' ? 'text-blue-400' :
@@ -475,7 +498,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
                             }}
                             className="absolute top-0 right-0 p-1.5 opacity-0 group-hover:opacity-100 transition-opacity bg-white/5 hover:bg-white/10 rounded-bl-xl border-l border-b border-white/5"
                         >
-                            <MoreHorizontal size={12} className="text-white/60" />
+                            <MoreHorizontal size={14} className="fill-current text-white" />
                         </button>
                     </div>
                 </div>
@@ -549,7 +572,18 @@ const MessageItem: React.FC<MessageItemProps> = ({
 
                     {/* Bubble */}
                     <div className="relative max-w-[70%] group">
-                        <div className={`rounded-lg px-2 py-1.5 shadow-sm relative text-sm leading-relaxed ${isTask ? (isMe ? 'bg-indigo-600/90 text-white rounded-tr-none border border-indigo-400/30' : 'bg-indigo-900/90 text-white rounded-tl-none border border-indigo-500/20') : (isMe ? 'bg-[#005c4b] text-[#e9edef] rounded-tr-none' : 'bg-[#202c33] text-[#e9edef] rounded-tl-none')} ${isMentioned && !isMe ? 'border-2 border-yellow-500/50' : ''}`}>
+                        <div className={`rounded-lg px-2 py-1.5 shadow-sm relative text-sm leading-relaxed ${isTask ? (isMe ? 'bg-indigo-600/90 text-white rounded-tr-none border border-indigo-400/30' : 'bg-indigo-900/90 text-white rounded-tl-none border border-indigo-500/20') : (isMe ? 'bg-[#005c4b] text-[#e9edef] rounded-tr-none' : 'bg-[#202c33] text-[#e9edef] rounded-tl-none')} ${isMentioned && !isMe ? 'border-2 border-yellow-500/50' : ''} ${isForwarded ? 'ring-1 ring-white/10 border-emerald-500/20' : ''}`}>
+                            {isForwarded && (
+                                <div className="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500/50 rounded-l" />
+                            )}
+
+                            {/* Forwarded Label */}
+                            {isForwarded && (
+                                <div className="flex items-center gap-1.5 mb-2 text-[10px] text-emerald-400 font-bold italic select-none">
+                                    <Forward size={12} className="shrink-0" />
+                                    <span>Forwarded {metadata?.fromChannelName ? `from ${metadata.fromChannelName}` : ''}</span>
+                                </div>
+                            )}
                             {/* Reply Context */}
                             {msg.replyTo && (
                                 <div
@@ -650,7 +684,6 @@ const MessageItem: React.FC<MessageItemProps> = ({
                                 className={`absolute top-0 right-0 m-1 w-6 h-6 rounded-full bg-black/30 hover:bg-black/50 text-white/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10`}
                                 title="Message options"
                             >
-                                <MoreHorizontal size={14} className="fill-current text-white" />
                             </button>
                         </div>
                     </div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Plus, Filter, MessageSquare, CheckCircle, CheckCircle2, Check, Clock, AlertCircle, ArrowLeft, Send, RefreshCw, Play, AlertOctagon, XCircle, Trash2, User, Sparkles, X, ChevronDown, LogOut, Settings, LayoutGrid, List, MoreHorizontal, Grid3X3, Columns, Layout, Menu, PanelLeftClose, Minimize2, Maximize2, Zap, Shield, Users, Lock, Activity, RotateCcw, Layers, Grip } from 'lucide-react';
+import { Search, Plus, Filter, MessageSquare, CheckCircle, CheckCircle2, Check, Clock, AlertCircle, ArrowLeft, Send, RefreshCw, Play, AlertOctagon, XCircle, Trash2, User, Sparkles, X, ChevronDown, LogOut, Settings, LayoutGrid, List, MoreHorizontal, Grid3X3, Columns, Layout, Menu, PanelLeftClose, Minimize2, Maximize2, Zap, Shield, Users, Lock, Activity, RotateCcw, Layers, Grip, Volume2, VolumeX } from 'lucide-react';
 import { io } from 'socket.io-client';
 import { getSocketUrl } from '@/lib/config';
 import { useStore } from '@/lib/store'; // Added import
@@ -26,6 +26,7 @@ import { LiveStatusModal } from '@/components/job-tracker/LiveStatusModal';
 import { RevisionRequestModal } from '@/components/job-tracker/RevisionRequestModal';
 import { GroupDiscoveryModal } from '@/components/job-tracker/GroupDiscoveryModal';
 import { NotificationCenter } from '@/components/job-tracker/NotificationCenter';
+import { KanbanBoard } from '@/components/job-tracker/KanbanBoard';
 
 interface Task {
     id: number;
@@ -71,7 +72,10 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
     const [showMatrix, setShowMatrix] = useState(false);
     const [highlightMessageId, setHighlightMessageId] = useState<number | null>(null);
 
-    // Quick Action State: { taskId, type: 'ask' | 'reject' | 'revision', content: '' }
+    // Sound State
+    const [isMuted, setIsMuted] = useState(false);
+
+    // ... existing quick action state ...
     const [quickAction, setQuickAction] = useState<{ taskId: number; type: 'ask' | 'reject' | 'revision', content: string } | null>(null);
 
     const [isLiveStatusOpen, setIsLiveStatusOpen] = useState(false);
@@ -100,6 +104,94 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
     const [selectedTask, setSelectedTask] = useState<Task | null>(null); // Added selectedTask
     const [hoveredTask, setHoveredTask] = useState<Task | null>(null);
     const [selectedTaskIds, setSelectedTaskIds] = useState(new Set<number>());
+
+    // -- SOUND NOTIFICATIONS (Top Level Hooks) --
+    const audioCtxRef = React.useRef<AudioContext | null>(null);
+
+    useEffect(() => {
+        const initAudio = () => {
+            if (!audioCtxRef.current) {
+                const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+                if (AudioContext) {
+                    audioCtxRef.current = new AudioContext();
+                }
+            }
+            if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+                audioCtxRef.current.resume().then(() => {
+                    console.log("[JobTracker] Audio Context Resumed");
+                }).catch(e => console.error(e));
+            }
+        };
+        document.addEventListener('click', initAudio, { once: true });
+        document.addEventListener('keydown', initAudio, { once: true });
+        return () => {
+            document.removeEventListener('click', initAudio);
+            document.removeEventListener('keydown', initAudio);
+            if (audioCtxRef.current) {
+                audioCtxRef.current.close();
+            }
+        };
+    }, []);
+
+    const playNotificationSound = (type: 'message' | 'task') => {
+        if (isMuted) {
+            console.log('[Sound Debug] Sound is Muted. Skipping.');
+            return;
+        }
+
+        try {
+            if (!audioCtxRef.current) {
+                console.log('[Sound Debug] No AudioContext, attempting to create one...');
+                const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+                if (AudioContext) audioCtxRef.current = new AudioContext();
+            }
+
+            const ctx = audioCtxRef.current;
+            if (!ctx) {
+                console.error('[Sound Debug] Failed to create AudioContext.');
+                return;
+            }
+
+            // Ensure running
+            if (ctx.state === 'suspended') {
+                console.log('[Sound Debug] AudioContext suspended. Resuming...');
+                ctx.resume().then(() => console.log('[Sound Debug] Resumed successfully.'));
+            } else {
+                console.log(`[Sound Debug] AudioContext State: ${ctx.state}`);
+            }
+
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+
+            const now = ctx.currentTime;
+
+            if (type === 'message') {
+                // Light "Pop"
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(800, now);
+                osc.frequency.exponentialRampToValueAtTime(400, now + 0.1);
+                gain.gain.setValueAtTime(0.3, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+                osc.start(now);
+                osc.stop(now + 0.1);
+            } else {
+                // Task "Ding"
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(500, now);
+                osc.frequency.linearRampToValueAtTime(1000, now + 0.1);
+                gain.gain.setValueAtTime(0.3, now);
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.3);
+                osc.start(now);
+                osc.stop(now + 0.3);
+            }
+            console.log(`[JobTracker] PLAYING SOUND: ${type}`);
+        } catch (e) {
+            console.error("Audio play failed", e);
+        }
+    };
 
     const ShortcutHints = ({ task }: { task: Task }) => {
         const status = task.status;
@@ -262,15 +354,43 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
     };
 
     const handleBulkStatusChange = async (status: string) => {
-        if (!confirm(`Update ${selectedTaskIds.size} tasks to '${status}'?`)) return;
+        // Filter Authorized Tasks
+        const authorizedIds: number[] = [];
+        const unauthorizedIds: number[] = [];
+
+        selectedTaskIds.forEach(id => {
+            const task = tasks.find(t => t.id === id);
+            if (!task) return;
+
+            if (getTaskPermissions(task).canEdit) {
+                authorizedIds.push(id);
+            } else {
+                unauthorizedIds.push(id);
+            }
+        });
+
+        if (authorizedIds.length === 0) {
+            alert("You do not have permission to update any of the selected tasks.");
+            return;
+        }
+
+        const confirmMsg = unauthorizedIds.length > 0
+            ? `Update ${authorizedIds.length} authorized tasks to '${status}'?\n(${unauthorizedIds.length} tasks will be skipped due to permissions)`
+            : `Update ${authorizedIds.length} tasks to '${status}'?`;
+
+        if (!confirm(confirmMsg)) return;
 
         try {
-            await Promise.all(Array.from(selectedTaskIds).map(id => api.patch(`/tasks/${id}`, { status })));
+            await Promise.all(authorizedIds.map(id => api.patch(`/tasks/${id}`, { status })));
 
             // Cleanup
             setIsSelectionMode(false);
             setSelectedTaskIds(new Set());
             loadTasks();
+
+            if (unauthorizedIds.length > 0) {
+                alert(`Successfully updated ${authorizedIds.length} tasks.\n${unauthorizedIds.length} tasks were skipped due to permission restrictions.`);
+            }
         } catch (error) {
             console.error("Failed to update tasks", error);
             alert("Some tasks could not be updated.");
@@ -329,8 +449,24 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                 console.log('[JobTracker] Connected to WebSocket');
             });
 
+            // Keep a slower poll just for auth/token sync if needed, or rely on other mechanisms
+            // For now, we'll remove the task polling but keep the auth check in a separate effect if strictly needed.
+            // Actually, let's keep a very slow poll (30s) for "safety" sync
+            // PREVIOUSLY DECLARED interval variable removed to fix re-declaration error.
+            /* const interval = setInterval(() => { ... }, 30000); */
+            // We can just rely on the interval declared before, or if this is a new effect, make sure variable names don't clash.
+            // Looking at the code, it seems I pasted the interval block TWICE. I will remove this second block entirely.
+
+            // -- SOUND NOTIFICATIONS --
+            // (Moved to top level)
+
             socket.on('task_created', (newTask: any) => {
                 console.log('[WS] Task Created:', newTask.id);
+                // We need to call the top-level playNotificationSound.
+                // Since this useEffect is a closure, it captures the function from the render scope.
+                // However, playNotificationSound is defined in the component scope, so it is available here.
+                playNotificationSound('task');
+
                 const mappedTask = {
                     id: newTask.id,
                     title: newTask.title,
@@ -351,6 +487,24 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                     metadata: newTask.metadata
                 };
                 setTasks(prev => [mappedTask, ...prev]);
+            });
+
+            socket.on('new_message', (msg: any) => {
+                console.log('[WS] New Message Received:', msg);
+                const currentUserId = auth.user?.id;
+                const isFromMe = msg.senderId === currentUserId;
+
+                console.log(`[Sound Debug] Msg Sender: ${msg.senderId}, My ID: ${currentUserId}, IsFromMe: ${isFromMe}`);
+
+                // Play sound if message is not from me
+                // Play sound if message is not from me
+                // DEBUG: Commented out filter to allow self-testing
+                // if (!isFromMe) {
+                console.log('[Sound Debug] Triggering Sound for Message (Forced)');
+                playNotificationSound('message');
+                // } else {
+                //     console.log('[Sound Debug] Skipping Sound (Message is from me)');
+                // }// }
             });
 
             socket.on('task_updated', (updatedTask: any) => {
@@ -409,6 +563,53 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
             };
         }
     }, [auth.token]);
+
+    // -- Permission Helper --
+    const getTaskPermissions = React.useCallback((task: Task) => {
+        if (!auth.user) return { canEdit: false, canDelete: false, canWithdraw: false };
+
+        const role = auth.user.role?.toLowerCase();
+        const user: any = auth.user;
+
+        // DEBUG LOGGING
+        // console.log('Perm Check:', {
+        //     role,
+        //     me: user.username,
+        //     requester: task.requester,
+        //     isReq: user.username === task.requester
+        // });
+
+        // Withdraw Check (Calculated FIRST)
+        // Check both username and fullName to be safe, matching case-insensitively potentially?
+        // Let's rely on exact match first as identifiers usually match
+        const isRequester = (user.username && user.username === task.requester) ||
+            (user.fullName && user.fullName === task.requester);
+
+        const canWithdraw = isRequester && task.status === 'todo';
+
+        // 1. Admin Override
+        if (role === 'admin') return { canEdit: true, canDelete: true, canWithdraw };
+
+        // 2. Viewer Restriction (But allow Withdraw)
+        if (role === 'viewer') return { canEdit: false, canDelete: false, canWithdraw };
+
+        // 3. Department Check
+        const userDeptName = typeof auth.user.department === 'object' ? auth.user.department?.name : auth.user.department;
+
+        const userDept = userDeptName?.toString().toLowerCase().trim();
+        const taskDept = task.dept?.toLowerCase().trim();
+
+        const isDeptMember = userDept === taskDept;
+
+        return {
+            canEdit: isDeptMember,
+            canDelete: false, // Only admins can delete
+            canWithdraw
+        };
+    }, [auth.user]);
+
+    // Derived helper for simple checks
+    const isAuthorized = React.useCallback((task: Task) => getTaskPermissions(task).canEdit, [getTaskPermissions]);
 
     // Filter Logic
     const filteredTasks = tasks.filter(task => {
@@ -650,30 +851,31 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
             const key = e.key.toLowerCase();
             const status = targetTask.status;
 
+            // Check Permissions
+            const perms = getTaskPermissions(targetTask);
+            const isAuthorized = perms.canEdit;
+
             switch (key) {
                 case 's': // Start
-                    if (status === 'todo') handleStatusUpdate(targetTask.id, 'in_progress');
+                    if (isAuthorized && status === 'todo') handleStatusUpdate(targetTask.id, 'in_progress');
                     break;
                 case 'd': // Done
-                    if (status === 'in_progress') handleStatusUpdate(targetTask.id, 'done');
+                    if (isAuthorized && status === 'in_progress') handleStatusUpdate(targetTask.id, 'done');
                     break;
                 case 'a': // Ask
-                    // Focus comment box if we have a selected task, otherwise maybe we should just allow 'A' if hovered?
-                    // For now, let's stick to the selectedTask behavior for 'A' since it needs a comment box check.
-                    // UNLESS we want 'A' to work on hover too? Let's make it work on hover if selectedTask is null.
+                    // Always allowed
                     const commentBox = document.getElementById('status-comment') as HTMLTextAreaElement;
                     if (commentBox && commentBox.value.trim()) {
-                        // We need to make sure handleAskQuestion uses targetTask
                         handleAskQuestion(targetTask);
                     } else if (selectedTask) {
                         commentBox?.focus();
                     }
                     break;
                 case 'r': // Reject
-                    if (status === 'todo') handleStatusUpdate(targetTask.id, 'rejected');
+                    if (isAuthorized && status === 'todo') handleStatusUpdate(targetTask.id, 'rejected');
                     break;
                 case 'q': // Re-Queue
-                    if (status === 'done' || status === 'rejected' || status === 'in_progress') handleStatusUpdate(targetTask.id, 'todo');
+                    if (isAuthorized && (status === 'done' || status === 'rejected' || status === 'in_progress')) handleStatusUpdate(targetTask.id, 'todo');
                     break;
             }
         };
@@ -1135,6 +1337,33 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                 </button>
                                             </div>
 
+                                            <div className="flex items-center gap-2 mr-2">
+                                                <button
+                                                    onClick={() => setIsMuted(!isMuted)}
+                                                    className={`p-1.5 rounded-lg transition-colors border ${isMuted ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-zinc-800 border-white/5 text-zinc-400 hover:text-white'}`}
+                                                    title={isMuted ? "Unmute Sounds" : "Mute Sounds"}
+                                                >
+                                                    {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                                                </button>
+                                            </div>
+
+                                            <div className="flex items-center gap-2 mr-2">
+                                                <button
+                                                    onClick={() => playNotificationSound('task')}
+                                                    className="p-1.5 rounded-lg transition-colors bg-zinc-800 border border-white/5 text-zinc-400 hover:text-white hover:bg-zinc-700"
+                                                    title="Test Sound"
+                                                >
+                                                    <Play size={14} />
+                                                </button>
+                                                <button
+                                                    onClick={() => setIsMuted(!isMuted)}
+                                                    className={`p-1.5 rounded-lg transition-colors border ${isMuted ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-zinc-800 border-white/5 text-zinc-400 hover:text-white'}`}
+                                                    title={isMuted ? "Unmute Sounds" : "Mute Sounds"}
+                                                >
+                                                    {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                                                </button>
+                                            </div>
+
                                             {/* Notification Center */}
                                             <div className="mr-2">
                                                 <NotificationCenter />
@@ -1288,6 +1517,24 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                     </button>
                                                 </div>
                                             )}
+
+                                            {/* View Switcher */}
+                                            <div className="flex bg-zinc-900 border border-white/5 rounded-lg p-0.5 h-7">
+                                                <button
+                                                    onClick={() => setViewMode('list')}
+                                                    className={`px-2 rounded-md transition-all flex items-center justify-center ${viewMode === 'list' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-300'}`}
+                                                    title="List View"
+                                                >
+                                                    <List size={14} />
+                                                </button>
+                                                <button
+                                                    onClick={() => setViewMode('board')}
+                                                    className={`px-2 rounded-md transition-all flex items-center justify-center ${viewMode === 'board' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-300'}`}
+                                                    title="Kanban Board"
+                                                >
+                                                    <LayoutGrid size={14} />
+                                                </button>
+                                            </div>
 
                                             {/* Search, etc. - Minimal for now since we have filters */}
                                             <div className="relative">
@@ -1537,7 +1784,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                                         .then(() => setQuickAction(null));
                                                                 }
                                                             } else if (quickAction && quickAction.type === 'revision') {
-                                                                api.post(`/tasks/${quickAction.taskId}/request-revision`, { reason: quickAction.content })
+                                                                api.post(`/tasks/${quickAction.taskId}/request-revision`, { description: quickAction.content })
                                                                     .then((res: any) => {
                                                                         loadTasks(); // Refresh list to show new status
                                                                         setQuickAction(null);
@@ -1547,14 +1794,18 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                                             setIsChatCollapsed(false);
                                                                         }
                                                                     })
-                                                                    .catch(err => console.error(err));
+                                                                    .catch(err => {
+                                                                        console.error(err);
+                                                                        alert('Failed to request revision: ' + (err.response?.data?.message || err.message));
+                                                                    });
                                                             } else {
                                                                 api.patch(`/tasks/${quickAction.taskId}`, { status: 'rejected', comment: quickAction.content })
                                                                     .then(loadTasks)
                                                                     .finally(() => setQuickAction(null));
                                                             }
                                                         }}
-                                                        className={`px-4 py-2 text-sm font-bold text-white rounded-lg shadow-lg flex items-center gap-2 ${quickAction.type === 'ask' ? 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-500/20' :
+                                                        disabled={!quickAction.content.trim()}
+                                                        className={`px-4 py-2 text-sm font-bold text-white rounded-lg shadow-lg flex items-center gap-2 ${!quickAction.content.trim() ? 'opacity-50 cursor-not-allowed' : ''} ${quickAction.type === 'ask' ? 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-500/20' :
                                                             quickAction.type === 'revision' ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-500/20' :
                                                                 'bg-red-600 hover:bg-red-500 shadow-red-500/20'
                                                             }`}
@@ -1618,225 +1869,15 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                         ) : activeTab === 'assets' ? (
                                             <UnifiedAssetsBoard />
                                         ) : viewMode === 'board' ? (
-                                            <div className="flex flex-col xl:flex-row h-fit xl:h-full gap-6 w-full p-6">
-                                                {/* KANBAN COLUMNS */}
-                                                {[
-                                                    { id: 'todo', label: 'In Queue', color: 'border-zinc-700' },
-                                                    { id: 'in_progress', label: 'On Air', color: 'border-blue-500' },
-                                                    { id: 'done', label: 'Archived', color: 'border-emerald-500' },
-                                                ]
-                                                    .filter(col => filterStatus === 'all' || col.id === filterStatus)
-                                                    .map(col => {
-                                                        // Column Filter Logic
-                                                        const colTasks = filteredTasks.filter(t => {
-                                                            if (col.id === 'todo') return t.status === 'todo' || t.status === 'review' || t.status === 'revision';
-                                                            if (col.id === 'in_progress') return t.status === 'in_progress';
-                                                            if (col.id === 'done') {
-                                                                const isDoneDate = new Date(t.updatedAt).toLocaleDateString() === archiveDate.toLocaleDateString();
-                                                                return (t.status === 'done' || t.status === 'rejected') && (!searchQuery ? isDoneDate : true);
-                                                            }
-                                                            return false;
-                                                        });
-
-                                                        return (
-                                                            <div key={col.id} className={`flex-1 min-w-[300px] shrink-0 flex flex-col bg-zinc-900/20 rounded-xl border border-white/5 h-[800px] xl:h-full transition-all duration-300`}>
-                                                                {/* Column Header */}
-                                                                <div className={`p-4 border-b border-white/5 flex items-center justify-between sticky top-0 bg-zinc-950/80 backdrop-blur-sm z-10 rounded-t-xl border-t-2 ${col.color}`}>
-                                                                    <div className="flex items-center gap-2">
-                                                                        <span className="font-display font-black text-sm text-zinc-300 uppercase tracking-widest">{col.label}</span>
-                                                                        <span className="bg-zinc-800 text-zinc-400 text-xs font-bold px-2 py-0.5 rounded-full">
-                                                                            {colTasks.length}
-                                                                        </span>
-                                                                    </div>
-
-                                                                    {col.id === 'done' && (
-                                                                        <div className="flex gap-1">
-                                                                            {/* Date Navigation (Moved Here for Board View) */}
-                                                                            <div className="flex items-center bg-zinc-800 rounded-md mr-2 relative">
-                                                                                <button
-                                                                                    onClick={() => {
-                                                                                        const d = new Date(archiveDate);
-                                                                                        d.setDate(d.getDate() - 1);
-                                                                                        setArchiveDate(d);
-                                                                                    }}
-                                                                                    className="p-1 hover:text-white text-zinc-400"
-                                                                                >
-                                                                                    <ArrowLeft size={12} />
-                                                                                </button>
-
-                                                                                {/* Clickable Date Display */}
-                                                                                <div className="relative flex items-center">
-                                                                                    <span className="text-[10px] font-bold px-1 min-w-[70px] text-center pointer-events-none">
-                                                                                        {archiveDate.toLocaleDateString() === new Date().toLocaleDateString() ? 'TODAY' : archiveDate.toLocaleDateString()}
-                                                                                    </span>
-                                                                                    <input
-                                                                                        type="date"
-                                                                                        value={archiveDate.toISOString().split('T')[0]}
-                                                                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                                                                                        onChange={(e) => {
-                                                                                            if (e.target.valueAsDate) setArchiveDate(e.target.valueAsDate);
-                                                                                        }}
-                                                                                    />
-                                                                                </div>
-
-                                                                                <button
-                                                                                    onClick={() => {
-                                                                                        const d = new Date(archiveDate);
-                                                                                        d.setDate(d.getDate() + 1);
-                                                                                        setArchiveDate(d);
-                                                                                    }}
-                                                                                    className="p-1 hover:text-white text-zinc-400"
-                                                                                >
-                                                                                    <Play size={12} className="rotate-0" />
-                                                                                </button>
-                                                                            </div>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-
-                                                                {/* Cards Container */}
-                                                                <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
-                                                                    {colTasks.length === 0 ? (
-                                                                        <div className="h-full flex flex-col items-center justify-center text-zinc-600 gap-3 opacity-50 select-none">
-                                                                            <div className="w-16 h-16 rounded-full bg-zinc-800/50 flex items-center justify-center">
-                                                                                {col.id === 'todo' ? <List size={24} /> :
-                                                                                    col.id === 'in_progress' ? <Zap size={24} /> :
-                                                                                        <CheckCircle size={24} />}
-                                                                            </div>
-                                                                            <span className="text-xs font-bold uppercase tracking-widest">No Tasks</span>
-                                                                        </div>
-                                                                    ) : (
-                                                                        <>
-                                                                            {/* 1. Normal (Non-Rejected) Tasks */}
-                                                                            {colTasks
-                                                                                .filter(t => t.status !== 'rejected')
-                                                                                .sort(sortTasksFn)
-                                                                                .map(task => {
-                                                                                    // --- VISUAL DESIGN ---
-                                                                                    let cardStyle = 'bg-[#09090b] border-zinc-800/50 hover:border-zinc-700 transition-all';
-                                                                                    if (task.priority === 'P1' && task.status !== 'done' && task.status !== 'rejected') {
-                                                                                        cardStyle += ' shadow-[0_0_15px_-5px_rgba(239,68,68,0.15)] border-red-900/30';
-                                                                                    } else if (task.priority === 'P2' && task.status !== 'done') {
-                                                                                        cardStyle += ' border-orange-900/30';
-                                                                                    }
-                                                                                    const groupColorHsl = generateGroupColor(task.dept || 'General', 'bg').match(/hsl\([^)]+\)/)?.[0] || '#52525b';
-                                                                                    const isSelected = selectedTaskIds.has(task.id);
-                                                                                    const isMyRequest = auth.user && task.requester === auth.user.fullName;
-
-                                                                                    return (
-                                                                                        <motion.div
-                                                                                            layout
-                                                                                            initial={{ opacity: 0, scale: 0.98 }}
-                                                                                            animate={{ opacity: 1, scale: 1 }}
-                                                                                            exit={{ opacity: 0, scale: 0.98 }}
-                                                                                            key={task.id}
-                                                                                            onClick={(e: any) => {
-                                                                                                if (isSelectionMode || e.ctrlKey || e.metaKey || e.shiftKey) {
-                                                                                                    e.stopPropagation();
-                                                                                                    if (!isSelectionMode) setIsSelectionMode(true);
-                                                                                                    toggleTaskSelection(task.id);
-                                                                                                } else {
-                                                                                                    setSelectedTask(task);
-                                                                                                }
-                                                                                            }}
-                                                                                            onMouseEnter={() => setHoveredTask(task)}
-                                                                                            onMouseLeave={() => setHoveredTask(null)}
-                                                                                            className={`relative rounded-xl border overflow-hidden cursor-pointer group hover:-translate-y-0.5 ${cardStyle} ${isSelected ? 'ring-2 ring-emerald-500 bg-zinc-800' : ''} ${isMyRequest ? 'bg-blue-500/5' : 'bg-zinc-900'} mb-3`}
-                                                                                            style={{
-                                                                                                borderColor: isMyRequest ? undefined : (isSelected ? undefined : 'rgba(255,255,255,0.05)')
-                                                                                            }}
-                                                                                        >
-                                                                                            <ShortcutHints task={task} />
-                                                                                            <div className="absolute left-0 top-0 bottom-0 w-[3px] z-10" style={{ backgroundColor: groupColorHsl }} />
-                                                                                            <div className="p-3 pl-5 flex flex-col gap-3">
-                                                                                                <div className="flex justify-between items-start gap-2">
-                                                                                                    <div className="flex flex-col min-w-0">
-                                                                                                        <div className="flex items-center gap-2 mb-1">
-                                                                                                            <span className="text-zinc-500 font-mono font-black text-[10px] opacity-70 tracking-tighter">#{task.id}</span>
-                                                                                                            <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-[1px] rounded-[4px] text-zinc-900 border border-black/10 shadow-sm" style={{ backgroundColor: groupColorHsl }}>{task.dept}</span>
-                                                                                                        </div>
-                                                                                                        <h3 className="text-sm font-display font-black text-zinc-200 leading-tight group-hover:text-emerald-400 transition-colors">{task.title}</h3>
-                                                                                                        <span className="text-[10px] text-zinc-500 mt-1">
-                                                                                                            Requested by <span className="text-zinc-400 font-bold">{isMyRequest ? 'You' : task.requester}</span>
-                                                                                                        </span>
-                                                                                                    </div>
-                                                                                                    {task.imageUrl && (
-                                                                                                        <div className="w-10 h-10 rounded bg-zinc-800 border border-white/10 overflow-hidden shrink-0 shadow-lg">
-                                                                                                            <img src={task.imageUrl} alt="img" className="w-full h-full object-cover" />
-                                                                                                        </div>
-                                                                                                    )}
-                                                                                                </div>
-
-                                                                                                <div className="flex items-center justify-between mt-1">
-                                                                                                    <div className="flex items-center gap-2">
-                                                                                                        <div className="w-5 h-5 rounded-full bg-zinc-800 flex items-center justify-center text-[9px] font-bold text-zinc-400 border border-white/10" style={{ backgroundColor: task.owner === 'Unknown' ? '#27272a' : groupColorHsl }}>
-                                                                                                            {task.owner ? task.owner[0] : '?'}
-                                                                                                        </div>
-                                                                                                        <span className={`text-[10px] font-black uppercase tracking-tight ${task.status === 'done' ? 'text-emerald-500' : 'text-zinc-400'}`}>
-                                                                                                            {task.owner === 'Unknown' ? 'Pool' : task.owner}
-                                                                                                        </span>
-                                                                                                    </div>
-                                                                                                    <TaskTimerWidget
-                                                                                                        status={task.status}
-                                                                                                        createdAt={task.createdAt}
-                                                                                                        startedAt={task.startedAt}
-                                                                                                        completedAt={task.completedAt}
-                                                                                                        className="scale-75 origin-right"
-                                                                                                    />
-                                                                                                </div>
-                                                                                            </div>
-                                                                                        </motion.div>
-                                                                                    );
-                                                                                })}
-
-                                                                            {/* 2. Divider & Rejected Header */}
-                                                                            {colTasks.some(t => t.status === 'rejected') && (
-                                                                                <div className="py-4 space-y-4">
-                                                                                    <div className="h-px bg-white/10 w-full" />
-                                                                                    <div className="mx-1 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded-lg flex items-center gap-3">
-                                                                                        <AlertCircle size={14} className="text-red-500" />
-                                                                                        <span className="text-[10px] font-black text-red-500 uppercase tracking-[0.2em]">Rejected Jobs</span>
-                                                                                    </div>
-                                                                                </div>
-                                                                            )}
-
-                                                                            {/* 3. Rejected Tasks */}
-                                                                            {colTasks
-                                                                                .filter(t => t.status === 'rejected')
-                                                                                .sort(sortTasksFn)
-                                                                                .map(task => {
-                                                                                    const groupColorHsl = generateGroupColor(task.dept || 'General', 'bg').match(/hsl\([^)]+\)/)?.[0] || '#52525b';
-                                                                                    return (
-                                                                                        <motion.div
-                                                                                            layout
-                                                                                            key={task.id}
-                                                                                            onClick={() => setSelectedTask(task)}
-                                                                                            onMouseEnter={() => setHoveredTask(task)}
-                                                                                            onMouseLeave={() => setHoveredTask(null)}
-                                                                                            className="relative rounded-xl border border-red-500/20 bg-red-500/5 overflow-hidden cursor-pointer group hover:bg-red-500/10 transition-colors p-3 pl-5 mb-3"
-                                                                                        >
-                                                                                            <ShortcutHints task={task} />
-                                                                                            <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-red-500" />
-                                                                                            <div className="flex justify-between items-center gap-2">
-                                                                                                <div className="flex flex-col min-w-0">
-                                                                                                    <div className="flex items-center gap-2 mb-1">
-                                                                                                        <span className="text-red-500 font-mono font-black text-[10px]">#{task.id}</span>
-                                                                                                        <span className="text-[9px] font-bold text-red-400 bg-red-400/10 px-1 rounded uppercase">{task.dept}</span>
-                                                                                                    </div>
-                                                                                                    <h3 className="text-xs font-bold text-zinc-300 truncate">{task.title}</h3>
-                                                                                                </div>
-                                                                                                <XCircle size={14} className="text-red-500/50 group-hover:text-red-500" />
-                                                                                            </div>
-                                                                                        </motion.div>
-                                                                                    );
-                                                                                })}
-                                                                        </>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
+                                            <div className="h-full overflow-hidden">
+                                                <KanbanBoard
+                                                    tasks={filteredTasks}
+                                                    isAuthorized={isAuthorized}
+                                                    onTaskUpdate={handleStatusUpdate}
+                                                    onTaskClick={(task) => setSelectedTask(task)}
+                                                />
                                             </div>
+
                                         ) : viewMode === 'list' ? (
                                             // LIST VIEW IMPLEMENTATION (SECTIONED)
                                             <div className="w-full flex flex-col gap-6 pb-20 relative">
@@ -2170,8 +2211,9 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                     )
                                                 })}
                                             </div>
-                                        )}
-                                    </div>
+                                        )
+                                        }
+                                    </div >
 
 
 
@@ -2180,14 +2222,16 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                     {/* USER PROFILE MODAL */}
 
                                     {/* USER PROFILE MODAL */}
-                                    {isUserManagementOpen && (
-                                        <div className="fixed inset-0 z-[120]">
-                                            <UserManagementPanel
-                                                onClose={() => setIsUserManagementOpen(false)}
-                                                initialView={userManagementInitialView}
-                                            />
-                                        </div>
-                                    )}
+                                    {
+                                        isUserManagementOpen && (
+                                            <div className="fixed inset-0 z-[120]">
+                                                <UserManagementPanel
+                                                    onClose={() => setIsUserManagementOpen(false)}
+                                                    initialView={userManagementInitialView}
+                                                />
+                                            </div>
+                                        )
+                                    }
 
 
                                     {/* MATRIX / ALMANAC MODAL */}
@@ -2277,10 +2321,22 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                                             </div>
                                                                         )}
 
-                                                                        <div className="bg-zinc-900/50 rounded-xl p-4 border border-white/5 mb-6">
-                                                                            <span className="text-zinc-500 text-[10px] font-bold uppercase tracking-wider block mb-2">Description</span>
+                                                                        <div className={`rounded-xl p-4 border mb-6 ${selectedTask.status?.startsWith('revision_') ? 'bg-amber-500/10 border-amber-500/20' : 'bg-zinc-900/50 border-white/5'}`}>
+                                                                            <span className={`text-[10px] font-bold uppercase tracking-wider block mb-2 ${selectedTask.status?.startsWith('revision_') ? 'text-amber-500' : 'text-zinc-500'}`}>
+                                                                                {selectedTask.status?.startsWith('revision_') ? 'Active Revision Request' : 'Description'}
+                                                                            </span>
                                                                             <p className="text-zinc-300 text-sm whitespace-pre-wrap leading-relaxed">
-                                                                                {selectedTask.description || "No description provided."}
+                                                                                {(() => {
+                                                                                    try {
+                                                                                        if (selectedTask.status?.startsWith('revision_') && Array.isArray(selectedTask.revisions) && selectedTask.revisions.length > 0) {
+                                                                                            const sortedRevs = [...selectedTask.revisions].sort((a: any, b: any) => (b.revisionNumber || 0) - (a.revisionNumber || 0));
+                                                                                            return sortedRevs[0]?.description || "No revision details provided.";
+                                                                                        }
+                                                                                    } catch (e) {
+                                                                                        console.error("Error displaying revision details:", e);
+                                                                                    }
+                                                                                    return selectedTask.description || "No description provided.";
+                                                                                })()}
                                                                             </p>
                                                                         </div>
 
@@ -2376,85 +2432,128 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                                     id="status-comment"
                                                                 />
 
-                                                                <div className="grid grid-cols-2 gap-3">
-                                                                    {selectedTask.status === 'todo' && (
-                                                                        <button
-                                                                            onClick={() => handleStatusUpdate(selectedTask.id, 'in_progress')}
-                                                                            className="col-span-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-lg shadow-lg shadow-indigo-900/20 flex items-center justify-center gap-2 group transition-all"
-                                                                            title="Shortcut: S"
-                                                                        >
-                                                                            <Play size={16} />
-                                                                            <span>Start Job</span>
-                                                                            <span className="ml-2 px-1.5 py-0.5 rounded bg-black/20 text-[10px] text-indigo-200 border border-indigo-400/30 opacity-60 group-hover:opacity-100 transition-opacity uppercase font-mono">S</span>
-                                                                        </button>
-                                                                    )}
+                                                                {(() => {
+                                                                    // Use Centralized Permission Helper
+                                                                    const perms = getTaskPermissions(selectedTask);
+                                                                    const isAuthorized = perms.canEdit;
 
-                                                                    {selectedTask.status === 'in_progress' && (
-                                                                        <>
+                                                                    return (
+                                                                        <div className="grid grid-cols-2 gap-3">
+                                                                            {!isAuthorized && (
+                                                                                <div className="col-span-2 bg-red-500/10 border border-red-500/20 rounded-lg p-3 flex items-center gap-3 mb-2">
+                                                                                    <Shield size={16} className="text-red-400 shrink-0" />
+                                                                                    <p className="text-xs text-red-300">
+                                                                                        You are viewing this task as a guest.
+                                                                                        Only <strong>{selectedTask.dept}</strong> members can change its status.
+                                                                                    </p>
+                                                                                </div>
+                                                                            )}
+
+                                                                            {/* Start Job - Only if Authorized */}
+                                                                            {selectedTask.status === 'todo' && (
+                                                                                <button
+                                                                                    onClick={() => handleStatusUpdate(selectedTask.id, 'in_progress')}
+                                                                                    disabled={!isAuthorized}
+                                                                                    className={`col-span-2 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2 group transition-all ${isAuthorized
+                                                                                        ? 'bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-900/20'
+                                                                                        : 'bg-zinc-800 text-zinc-500 cursor-not-allowed opacity-50'}`}
+                                                                                    title={isAuthorized ? "Shortcut: S" : "Unauthorized"}
+                                                                                >
+                                                                                    <Play size={16} />
+                                                                                    <span>Start Job</span>
+                                                                                    {isAuthorized && <span className="ml-2 px-1.5 py-0.5 rounded bg-black/20 text-[10px] text-indigo-200 border border-indigo-400/30 opacity-60 group-hover:opacity-100 transition-opacity uppercase font-mono">S</span>}
+                                                                                </button>
+                                                                            )}
+
+                                                                            {/* In Progress Actions - Only if Authorized */}
+                                                                            {selectedTask.status === 'in_progress' && (
+                                                                                <>
+                                                                                    <button
+                                                                                        onClick={() => handleStatusUpdate(selectedTask.id, 'done')}
+                                                                                        disabled={!isAuthorized}
+                                                                                        className={`bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-lg shadow-lg shadow-emerald-900/20 flex items-center justify-center gap-2 group transition-all ${!isAuthorized && 'bg-zinc-800 hover:bg-zinc-800 text-zinc-500 cursor-not-allowed opacity-50 shadow-none'}`}
+                                                                                        title={isAuthorized ? "Shortcut: D" : "Unauthorized"}
+                                                                                    >
+                                                                                        <CheckCircle2 size={16} />
+                                                                                        <span>Complete</span>
+                                                                                        {isAuthorized && <span className="ml-2 px-1.5 py-0.5 rounded bg-black/20 text-[10px] text-emerald-200 border border-emerald-400/30 opacity-60 group-hover:opacity-100 transition-opacity uppercase font-mono">D</span>}
+                                                                                    </button>
+                                                                                    <button
+                                                                                        onClick={() => handleStatusUpdate(selectedTask.id, 'blocked')}
+                                                                                        disabled={!isAuthorized}
+                                                                                        className={`bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 rounded-lg shadow-lg shadow-amber-900/20 flex items-center justify-center gap-2 transition-all ${!isAuthorized && 'bg-zinc-800 hover:bg-zinc-800 text-zinc-500 cursor-not-allowed opacity-50 shadow-none'}`}
+                                                                                    >
+                                                                                        <AlertOctagon size={16} /> Block
+                                                                                    </button>
+                                                                                </>
+                                                                            )}
+
+                                                                            {/* Re-Queue - Only if Authorized */}
                                                                             <button
-                                                                                onClick={() => handleStatusUpdate(selectedTask.id, 'done')}
-                                                                                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-lg shadow-lg shadow-emerald-900/20 flex items-center justify-center gap-2 group transition-all"
-                                                                                title="Shortcut: D"
+                                                                                onClick={() => handleStatusUpdate(selectedTask.id, 'todo')}
+                                                                                disabled={!isAuthorized}
+                                                                                className={`col-span-1 bg-zinc-700 hover:bg-zinc-600 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2 group transition-all ${!isAuthorized && 'bg-zinc-800 hover:bg-zinc-800 text-zinc-500 cursor-not-allowed opacity-50'}`}
+                                                                                title={isAuthorized ? "Shortcut: Q" : "Unauthorized"}
                                                                             >
-                                                                                <CheckCircle2 size={16} />
-                                                                                <span>Complete</span>
-                                                                                <span className="ml-2 px-1.5 py-0.5 rounded bg-black/20 text-[10px] text-emerald-200 border border-emerald-400/30 opacity-60 group-hover:opacity-100 transition-opacity uppercase font-mono">D</span>
+                                                                                <RefreshCw size={16} />
+                                                                                <span>Re-Queue</span>
+                                                                                {isAuthorized && <span className="ml-2 px-1.5 py-0.5 rounded bg-black/20 text-[10px] text-zinc-300 border border-zinc-500/30 opacity-0 group-hover:opacity-100 transition-opacity uppercase font-mono">Q</span>}
                                                                             </button>
+
+                                                                            {/* Ask Question - ALWAYS ALLOWED for everyone */}
                                                                             <button
-                                                                                onClick={() => handleStatusUpdate(selectedTask.id, 'blocked')}
-                                                                                className="bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 rounded-lg shadow-lg shadow-amber-900/20 flex items-center justify-center gap-2 transition-all"
+                                                                                onClick={() => handleAskQuestion()}
+                                                                                className="col-span-1 bg-sky-600 hover:bg-sky-500 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2 group transition-all"
+                                                                                title="Shortcut: A (Requires comment)"
                                                                             >
-                                                                                <AlertOctagon size={16} /> Block
+                                                                                <MessageSquare size={16} />
+                                                                                <span>Ask</span>
+                                                                                <span className="ml-2 px-1.5 py-0.5 rounded bg-black/20 text-[10px] text-sky-200 border border-sky-400/30 opacity-60 group-hover:opacity-100 transition-opacity uppercase font-mono">A</span>
                                                                             </button>
-                                                                        </>
-                                                                    )}
 
-                                                                    <button
-                                                                        onClick={() => handleStatusUpdate(selectedTask.id, 'todo')}
-                                                                        className="col-span-1 bg-zinc-700 hover:bg-zinc-600 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2 group transition-all"
-                                                                        title="Shortcut: Q"
-                                                                    >
-                                                                        <RefreshCw size={16} />
-                                                                        <span>Re-Queue</span>
-                                                                        <span className="ml-2 px-1.5 py-0.5 rounded bg-black/20 text-[10px] text-zinc-300 border border-zinc-500/30 opacity-0 group-hover:opacity-100 transition-opacity uppercase font-mono">Q</span>
-                                                                    </button>
+                                                                            {/* Request Revision - ALWAYS ALLOWED (requester usually does this) */}
+                                                                            <button
+                                                                                onClick={() => setQuickAction({ taskId: selectedTask.id, type: 'revision', content: '' })}
+                                                                                className="col-span-1 bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2 transition-all"
+                                                                            >
+                                                                                <RotateCcw size={16} /> Request Revision
+                                                                            </button>
 
-                                                                    <button
-                                                                        onClick={handleAskQuestion}
-                                                                        className="col-span-1 bg-sky-600 hover:bg-sky-500 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2 group transition-all"
-                                                                        title="Shortcut: A (Requires comment)"
-                                                                    >
-                                                                        <MessageSquare size={16} />
-                                                                        <span>Ask</span>
-                                                                        <span className="ml-2 px-1.5 py-0.5 rounded bg-black/20 text-[10px] text-sky-200 border border-sky-400/30 opacity-60 group-hover:opacity-100 transition-opacity uppercase font-mono">A</span>
-                                                                    </button>
+                                                                            {/* Reject Task - Only if Authorized */}
+                                                                            {selectedTask.status !== 'rejected' && (
+                                                                                <button
+                                                                                    onClick={() => handleStatusUpdate(selectedTask.id, 'rejected')}
+                                                                                    disabled={!isAuthorized}
+                                                                                    className={`col-span-2 mt-2 border border-red-900/50 text-red-500 font-bold py-2 rounded-lg hover:bg-red-900/20 flex items-center justify-center gap-2 group transition-all ${!isAuthorized && 'opacity-30 cursor-not-allowed hover:bg-transparent'}`}
+                                                                                    title={isAuthorized ? "Shortcut: R" : "Unauthorized"}
+                                                                                >
+                                                                                    <XCircle size={16} />
+                                                                                    <span>Reject Task</span>
+                                                                                    {isAuthorized && <span className="ml-2 px-1.5 py-0.5 rounded bg-black/20 text-[10px] text-red-400 border border-red-500/30 opacity-0 group-hover:opacity-100 transition-opacity uppercase font-mono">R</span>}
+                                                                                </button>
+                                                                            )}
 
-                                                                    <button
-                                                                        onClick={() => setQuickAction({ taskId: selectedTask.id, type: 'revision', content: '' })}
-                                                                        className="col-span-1 bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2 transition-all"
-                                                                    >
-                                                                        <RotateCcw size={16} /> Request Revision
-                                                                    </button>
+                                                                            {/* Withdraw Request - For unauthorized requesters */}
+                                                                            {perms.canWithdraw && (
+                                                                                <button
+                                                                                    onClick={handleDeleteTask}
+                                                                                    className="col-span-2 mt-2 bg-red-950/30 hover:bg-red-900/40 text-red-400 hover:text-red-300 font-bold py-3 rounded-lg border border-red-900/20 flex items-center justify-center gap-2 transition-all"
+                                                                                >
+                                                                                    <LogOut size={16} className="rotate-180" /> Withdraw Request
+                                                                                </button>
+                                                                            )}
 
-                                                                    {selectedTask.status !== 'rejected' && (
-                                                                        <button
-                                                                            onClick={() => handleStatusUpdate(selectedTask.id, 'rejected')}
-                                                                            className="col-span-2 mt-2 border border-red-900/50 text-red-500 font-bold py-2 rounded-lg hover:bg-red-900/20 flex items-center justify-center gap-2 group transition-all"
-                                                                            title="Shortcut: R"
-                                                                        >
-                                                                            <XCircle size={16} />
-                                                                            <span>Reject Task</span>
-                                                                            <span className="ml-2 px-1.5 py-0.5 rounded bg-black/20 text-[10px] text-red-400 border border-red-500/30 opacity-0 group-hover:opacity-100 transition-opacity uppercase font-mono">R</span>
-                                                                        </button>
-                                                                    )}
-
-                                                                    <button
-                                                                        onClick={handleDeleteTask}
-                                                                        className="col-span-2 mt-4 bg-red-950/30 hover:bg-red-900/40 text-red-700 hover:text-red-500 font-bold py-3 rounded-lg border border-red-900/20 flex items-center justify-center gap-2 transition-all"
-                                                                    >
-                                                                        <Trash2 size={16} /> Delete Permanently
-                                                                    </button>
-                                                                </div>
+                                                                            {/* Delete - Admin Only usually, but let's use canDelete from helper */}
+                                                                            <button
+                                                                                onClick={handleDeleteTask}
+                                                                                disabled={!perms.canDelete}
+                                                                                className={`col-span-2 mt-4 bg-red-950/30 hover:bg-red-900/40 text-red-700 hover:text-red-500 font-bold py-3 rounded-lg border border-red-900/20 flex items-center justify-center gap-2 transition-all ${!perms.canDelete && 'hidden'}`}
+                                                                            >
+                                                                                <Trash2 size={16} /> Delete Permanently
+                                                                            </button>
+                                                                        </div>
+                                                                    );
+                                                                })()}
                                                             </div>
 
                                                             {/* Comment Input */}
@@ -2515,44 +2614,46 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                             <span className="text-[10px] font-bold mt-1">Stats</span>
                                         </button>
                                     </div>
-                                </motion.div>
+                                </motion.div >
                             )}
-                        </AnimatePresence>
-                    </div>
+                        </AnimatePresence >
+                    </div >
 
                     {/* CHAT PANEL (Desktop: Left of Dashboard | Mobile: Overlay) */}
-                    <div className={`flex flex-col h-full bg-[#0b141a] transition-all duration-300 ease-in-out border-r border-white/5
+                    < div className={`flex flex-col h-full bg-[#0b141a] transition-all duration-300 ease-in-out border-r border-white/5
                     ${chat.activeChannelId
                             ? 'absolute inset-0 z-[60] w-full lg:static lg:order-first lg:w-[450px] lg:opacity-100 lg:translate-x-0'
                             : 'w-0 opacity-0 overflow-hidden border-r-0 lg:w-0'}
                 `}>
-                        {chat.activeChannelId && (
-                            <ChatInterface
-                                notificationStats={channelStats}
-                                pendingMessage={chatPendingMessage}
-                                isChatOnly={true} // Hides Sidebar
-                                onMessageConsumed={() => setChatPendingMessage(null)}
-                                onUnreadChange={(total, counts, mentions) => {
-                                    setTotalUnread(total);
-                                    setUnreadCounts(counts);
-                                    setMentionCounts(mentions);
-                                }}
-                                onCreateGroup={(view = 'groups_root') => {
-                                    setUserManagementInitialView(view);
-                                    setIsUserManagementOpen(true);
-                                }}
-                                onDiscoveryClick={(tab: 'groups' | 'people' | undefined) => {
-                                    setDiscoveryTab(tab || 'groups');
-                                    setIsDiscoveryOpen(true);
-                                }}
-                                onMemberClick={(member) => setSelectedMember(member)}
-                                taskStatusMap={taskStatusMap}
-                                highlightMessageId={highlightMessageId}
-                                tasks={tasks}
-                            />
-                        )}
-                    </div>
-                </div>
+                        {
+                            chat.activeChannelId && (
+                                <ChatInterface
+                                    notificationStats={channelStats}
+                                    pendingMessage={chatPendingMessage}
+                                    isChatOnly={true} // Hides Sidebar
+                                    onMessageConsumed={() => setChatPendingMessage(null)}
+                                    onUnreadChange={(total, counts, mentions) => {
+                                        setTotalUnread(total);
+                                        setUnreadCounts(counts);
+                                        setMentionCounts(mentions);
+                                    }}
+                                    onCreateGroup={(view = 'groups_root') => {
+                                        setUserManagementInitialView(view);
+                                        setIsUserManagementOpen(true);
+                                    }}
+                                    onDiscoveryClick={(tab: 'groups' | 'people' | undefined) => {
+                                        setDiscoveryTab(tab || 'groups');
+                                        setIsDiscoveryOpen(true);
+                                    }}
+                                    onMemberClick={(member) => setSelectedMember(member)}
+                                    taskStatusMap={taskStatusMap}
+                                    highlightMessageId={highlightMessageId}
+                                    tasks={tasks}
+                                />
+                            )
+                        }
+                    </div >
+                </div >
             </div >
 
             {/* GLOBAL MODALS (Rendered at End for Stacking Context) */}

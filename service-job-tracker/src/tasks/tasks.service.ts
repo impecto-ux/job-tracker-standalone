@@ -94,14 +94,28 @@ export class TasksService implements OnApplicationBootstrap {
       .leftJoinAndSelect('task.department', 'department')
       .leftJoinAndSelect('task.owner', 'owner')
       .leftJoinAndSelect('task.requester', 'requester')
+      .leftJoinAndSelect('task.revisions', 'revisions')
       .orderBy('task.created_at', 'DESC');
 
     if (filters.status) query.andWhere('task.status = :status', { status: filters.status });
+    if (filters.search) {
+      query.andWhere('(task.title LIKE :search OR task.description LIKE :search)', { search: `%${filters.search}%` });
+    }
     if (filters.departmentId) query.andWhere('task.department_id = :deptId', { deptId: filters.departmentId });
     if (filters.ownerId) query.andWhere('task.owner_id = :ownerId', { ownerId: filters.ownerId });
     if (filters.requesterId) query.andWhere('task.requester_id = :requesterId', { requesterId: filters.requesterId });
 
-    return query.getMany();
+    const tasks = await query.getMany();
+    if (tasks.length > 0) {
+      // Find a task with revisions to log
+      const taskWithRev = tasks.find(t => t.revisions && t.revisions.length > 0);
+      if (taskWithRev) {
+        console.log(`[TasksService] DEBUG: Task #${taskWithRev.id} has ${taskWithRev.revisions.length} revisions.`);
+      } else {
+        console.log(`[TasksService] DEBUG: No tasks with revisions found in current batch of ${tasks.length}.`);
+      }
+    }
+    return tasks;
   }
 
   async findOne(id: number): Promise<Task | null> {
@@ -159,12 +173,22 @@ export class TasksService implements OnApplicationBootstrap {
         }
       }
     }
+
+
     // -----------------------------
 
     // 1. Update Task
     const oldStatus = task.status;
     const oldTitle = task.title;
     const oldDesc = task.description;
+
+    // Strict Revision Done -> Done Check: Only Requester or Admin can approve
+    if (oldStatus === 'revision_done' && newStatus === 'done') {
+      const isRequester = (task.requesterId === userId);
+      if (!isRequester && !isSystemAdmin) {
+        throw new ForbiddenException('Only the original Requester (or Admin) can approve a completed revision.');
+      }
+    }
 
     // Timestamp Logic
     if (newStatus === 'in_progress' && !task.startedAt) {
@@ -316,6 +340,11 @@ export class TasksService implements OnApplicationBootstrap {
         if (oldStatus !== newStatus && newStatus === 'done') icon = '✅';
         if (oldStatus !== newStatus && newStatus === 'in_progress') icon = '🚀';
 
+        // Revision Icons
+        if (newStatus === 'revision_pending') icon = '🔄';
+        if (newStatus === 'revision_in_progress') icon = '🎬'; // On Air
+        if (newStatus === 'revision_done') icon = '🆗'; // Ready for Review
+
         let message = `${icon} **Task Updated: #${task.id}**\n${changes.join('\n')}`;
 
         if (updateTaskDto.title || updateTaskDto.description) {
@@ -338,7 +367,16 @@ export class TasksService implements OnApplicationBootstrap {
 
         try {
           console.log(`[TasksService] 📤 Sending bot message to channel: ${targetChannel.name} (ID: ${targetChannel.id})`);
-          await this.channelsService.sendBotMessage(targetChannel.id, message);
+
+          // If Revision Done, try to reply to the original task request if available
+          let replyToId = undefined;
+          if (newStatus === 'revision_done' && task.metadata?.sourceMessageId) {
+            replyToId = task.metadata.sourceMessageId;
+            // Override message for this specific case to be a direct question
+            message = `@${task.requester?.username || 'user'} Revision finished! Can you check the revision?`;
+          }
+
+          await this.channelsService.sendBotMessage(targetChannel.id, message, 'JT ADVISOR', replyToId);
           console.log(`[TasksService] ✅ Bot message sent successfully`);
         } catch (err) {
           console.error('[TasksService] ❌ Failed to send bot message:', err);
@@ -504,7 +542,7 @@ export class TasksService implements OnApplicationBootstrap {
 
     // 1. Create Revision Record
     const revision = this.revisionsRepository.create({
-      task: task,
+      task: { id: task.id } as any, // Force explicit relation by ID to avoid TypeORM issues
       revisionNumber: (task.revisionCount || 0) + 1,
       type: dto.type || 'other',
       severity: dto.severity || 'low',
@@ -517,7 +555,7 @@ export class TasksService implements OnApplicationBootstrap {
     // 2. Update Task State
     task.revisionCount = revision.revisionNumber;
     task.currentVersion = revision.revisionNumber;
-    task.status = 'revision';
+    task.status = 'revision_pending';
     task.completedAt = null;
 
     const savedTask = await this.tasksRepository.save(task);

@@ -11,6 +11,8 @@ import { CreateTaskDto } from '../tasks/dto/create-task.dto';
 import { DepartmentsService } from '../departments/departments.service';
 import { ChatGateway } from './chat.gateway';
 import { SquadAgentsService } from '../squad-agents/squad-agents.service';
+import * as fs from 'fs';
+import * as path from 'path';
 
 @Injectable()
 export class ChannelsService implements OnApplicationBootstrap {
@@ -277,11 +279,12 @@ export class ChannelsService implements OnApplicationBootstrap {
             thumbnailUrl: m.thumbnailUrl,
             mediaType: m.mediaType,
             replyTo: m.replyTo ? { id: m.replyTo.id, content: m.replyTo.content, sender: m.replyTo.sender ? { id: m.replyTo.sender.id, fullName: m.replyTo.sender.fullName } : null } : null,
-            linkedTaskId: m.linkedTaskId
+            linkedTaskId: m.linkedTaskId,
+            metadata: m.metadata
         })) as any;
     }
 
-    async postMessage(channelId: number, content: string, userId: number, mediaUrl?: string, mediaType?: string, replyToId?: number, thumbnailUrl?: string): Promise<Message> {
+    async postMessage(channelId: number, content: string, userId: number, mediaUrl?: string, mediaType?: string, replyToId?: number, thumbnailUrl?: string, metadata?: any): Promise<Message> {
         console.log(`[ChannelsService] postMessage: "${content}" @ Channel ${channelId}`);
         const channel = await this.channelsRepository.findOne({
             where: { id: channelId },
@@ -312,8 +315,10 @@ export class ChannelsService implements OnApplicationBootstrap {
             sender: { id: userId },
             mediaUrl,
             thumbnailUrl,
-            mediaType
+            mediaType,
+            metadata
         };
+
 
         if (replyToId) {
             const replyToMessage = await this.messagesRepository.findOne({ where: { id: replyToId } });
@@ -347,6 +352,7 @@ export class ChannelsService implements OnApplicationBootstrap {
                 content: helpMsg.content,
                 sender: helpMsg.sender ? { id: helpMsg.sender.id, fullName: helpMsg.sender.fullName } : null,
                 createdAt: helpMsg.createdAt,
+                metadata: helpMsg.metadata,
                 channel: { id: helpMsg.channel.id, name: helpMsg.channel.name, type: helpMsg.channel.type }
             } as any;
         }
@@ -359,6 +365,7 @@ export class ChannelsService implements OnApplicationBootstrap {
             where: { id: savedMessageRaw.id },
             relations: ['sender', 'channel', 'replyTo', 'replyTo.sender'] // Include replyTo and its sender
         });
+
 
         // BROADCAST VIA WEBSOCKET
         this.chatGateway.broadcastMessage(savedMessage);
@@ -403,6 +410,7 @@ export class ChannelsService implements OnApplicationBootstrap {
             mediaType: savedMessage.mediaType,
             replyTo: savedMessage.replyTo ? { id: savedMessage.replyTo.id, content: savedMessage.replyTo.content } : undefined,
             linkedTaskId: savedMessage.linkedTaskId,
+            metadata: savedMessage.metadata,
             channel: { id: savedMessage.channel.id, name: savedMessage.channel.name, type: savedMessage.channel.type }
         } as any;
     }
@@ -499,7 +507,16 @@ export class ChannelsService implements OnApplicationBootstrap {
                         dept = await this.departmentsService.findOrCreateByName('General');
                     }
                 }
-                // 3. Fallback to 'General' (never create a Dept from a private/group channel name)
+                // 3. [FIX] If it is a GROUP channel, map it to a Department of the same name
+                else if (channel.type === 'group') {
+                    try {
+                        dept = await this.departmentsService.findOrCreateByName(channel.name);
+                    } catch (e) {
+                        console.error('Failed to auto-create group dept', e);
+                        dept = await this.departmentsService.findOrCreateByName('General');
+                    }
+                }
+                // 4. Fallback to 'General' (e.g. DMs)
                 else {
                     dept = await this.departmentsService.findOrCreateByName('General');
                 }
@@ -555,7 +572,7 @@ export class ChannelsService implements OnApplicationBootstrap {
         this.chatGateway.notifyUserOfGroupRemoval(userId, groupId, channelId);
     }
 
-    async sendBotMessage(channelId: number, content: string, botName: string = 'JT ADVISOR') {
+    async sendBotMessage(channelId: number, content: string, botName: string = 'JT ADVISOR', replyToId?: number) {
         const channel = await this.channelsRepository.findOneBy({ id: channelId });
         if (!channel) return;
 
@@ -567,12 +584,13 @@ export class ChannelsService implements OnApplicationBootstrap {
             content,
             channel,
             sender: botUser || null,
+            replyTo: replyToId ? { id: replyToId } as any : null
         });
 
         const savedMessageRaw = await this.messagesRepository.save(message);
         const savedMessage = await this.messagesRepository.findOne({
             where: { id: savedMessageRaw.id },
-            relations: ['channel', 'sender']
+            relations: ['channel', 'sender', 'replyTo', 'replyTo.sender']
         });
 
         if (savedMessage) {

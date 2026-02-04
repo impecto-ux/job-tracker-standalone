@@ -39,8 +39,8 @@ export class ChannelsController {
     }
 
     @Post(':id/messages')
-    postMessage(@Param('id') id: string, @Body() body: { content: string; mediaUrl?: string; mediaType?: string; replyToId?: number; thumbnailUrl?: string }, @Request() req) {
-        return this.channelsService.postMessage(+id, body.content, req.user.userId, body.mediaUrl, body.mediaType, body.replyToId, body.thumbnailUrl);
+    postMessage(@Param('id') id: string, @Body() body: { content: string; mediaUrl?: string; mediaType?: string; replyToId?: number; thumbnailUrl?: string; metadata?: any }, @Request() req) {
+        return this.channelsService.postMessage(+id, body.content, req.user.userId, body.mediaUrl, body.mediaType, body.replyToId, body.thumbnailUrl, body.metadata);
     }
 
     @Post(':id/members/:userId')

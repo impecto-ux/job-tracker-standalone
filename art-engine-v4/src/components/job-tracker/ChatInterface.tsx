@@ -67,6 +67,7 @@ export default function ChatInterface({
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [selectedMessageIds, setSelectedMessageIds] = useState<number[]>([]);
     const [isForwardModalOpen, setIsForwardModalOpen] = useState(false);
+    const [forwardingMessages, setForwardingMessages] = useState<ChatMessage[]>([]); // Messages currently being forwarded
     const isInitialScrollRef = useRef(true); // Track if it's the first render/switch
 
     // ESC Handler
@@ -232,6 +233,11 @@ export default function ChatInterface({
             }
         });
 
+        socket.on('message', (msg: ChatMessage) => {
+            console.log('[DEBUG] Socket received message:', msg);
+            handleMessage(msg); // Call the existing handler
+        });
+
         socket.on('message_updated', (msg: ChatMessage | Record<string, any>) => {
             console.log('WS Message Updated:', msg);
             if ((msg as any).channel && (msg as any).channel.id) {
@@ -277,6 +283,7 @@ export default function ChatInterface({
             if (!hasExistingMessages) setIsLoading(true);
 
             api.get(`/channels/${chat.activeChannelId}/messages?limit=200&t=${Date.now()}`).then(res => {
+                console.log(`[DEBUG] Loaded ${res.data.length} messages for channel ${chat.activeChannelId}. Sample metadata:`, res.data[res.data.length - 1]?.metadata);
                 chat.setMessages(chat.activeChannelId!, res.data);
             }).catch(err => console.error("Failed to load messages", err))
                 .finally(() => setIsLoading(false));
@@ -519,12 +526,28 @@ export default function ChatInterface({
         }
     };
 
+    const handleOpenForward = (msg?: ChatMessage) => {
+        if (msg) {
+            setForwardingMessages([msg]);
+        } else {
+            const selected = activeMessages.filter(m => selectedMessageIds.includes(m.id));
+            setForwardingMessages(selected);
+        }
+        setIsForwardModalOpen(true);
+    };
+
     const handleForward = async (targets: { type: 'channel' | 'user', id: number, name: string }[]) => {
-        if (targets.length === 0) return;
+        if (targets.length === 0 || forwardingMessages.length === 0) return;
         setIsForwardModalOpen(false);
 
+        // Get current channel name for attribution
+        const fromChannel = chat.channels.find(c => String(c.id) === String(chat.activeChannelId));
+        const fromChannelName = fromChannel?.name || 'Unknown';
+
+        console.log('[DEBUG] Forwarding messages from:', fromChannelName, forwardingMessages);
+
         // Prepare messages to forward - Maintain order!
-        const messagesToForward = activeMessages.filter(m => selectedMessageIds.includes(m.id));
+        const messagesToForward = [...forwardingMessages];
 
         try {
             for (const target of targets) {
@@ -533,34 +556,41 @@ export default function ChatInterface({
                 if (target.type === 'channel') {
                     endpoint = `/channels/${target.id}/messages`;
                 } else {
-                    // Logic for DM (if DMs are implemented as channels, we need to find/create DM channel first)
-                    // For now, assume we just create a DM or post to their "personal" channel?
-                    // NOTE: Existing system might not support direct DMs easily without specific logic.
-                    // Fallback/Warning: If DMs are not fully ready, maybe restrict to channels or auto-create DM.
-                    // Assuming standard channel post for now.
-                    // TODO: DM Logic specific to this app.
-                    continue; // Skip users for now if DM logic isn't explicit, or see below.
+                    // Logic for DM: Create/Retrieve DM channel first
+                    try {
+                        const dmRes = await api.post('/channels/dm', { targetUserId: target.id });
+                        const channelId = dmRes.data.id;
+                        endpoint = `/channels/${channelId}/messages`;
+                    } catch (dmErr) {
+                        console.error('Failed to create DM channel for forward', dmErr);
+                        continue;
+                    }
                 }
 
                 if (!endpoint) continue;
 
                 for (const msg of messagesToForward) {
-                    await api.post(endpoint, {
+                    const res = await api.post(endpoint, {
                         content: msg.content, // Forward content
                         mediaUrl: msg.mediaUrl,
                         thumbnailUrl: msg.thumbnailUrl,
                         mediaType: msg.mediaType,
-                        metadata: { isForwarded: true }
+                        metadata: {
+                            isForwarded: true,
+                            fromChannelName: fromChannelName
+                        }
                     });
+                    console.log('[DEBUG] Forward API Response:', res.status, res.data);
                 }
             }
 
             // Reset selection after successful forward
             setIsSelectionMode(false);
             setSelectedMessageIds([]);
+            setForwardingMessages([]);
             alert('Messages forwarded!');
-        } catch (e) {
-            console.error('Forward failed', e);
+        } catch (error) {
+            console.error('Forwarding failed', error);
             alert('Forwarding failed.');
         }
     };
@@ -825,7 +855,7 @@ export default function ChatInterface({
                                 <div className="h-6 w-px bg-white/10 mx-2" />
                                 <div className="flex items-center gap-2">
                                     <button
-                                        onClick={() => setIsForwardModalOpen(true)}
+                                        onClick={() => handleOpenForward()}
                                         disabled={selectedMessageIds.length === 0}
                                         className="p-2 text-[#e9edef] disabled:opacity-30 hover:bg-white/10 rounded-full transition-colors relative group"
                                         title="Forward"
@@ -950,6 +980,7 @@ export default function ChatInterface({
                             fileInputRef.current?.closest('div')?.querySelector('textarea')?.focus();
                         }}
                         onDelete={handleDelete}
+                        onForward={handleOpenForward}
                         onLightbox={setLightboxUrl}
                         messagesEndRef={messagesEndRef}
                         onMemberClick={onMemberClick}
