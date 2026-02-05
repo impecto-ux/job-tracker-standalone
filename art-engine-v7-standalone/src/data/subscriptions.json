@@ -1,0 +1,11 @@
+[
+  {
+    "id": "h7mofd",
+    "name": "ChatGPT",
+    "amount": 700,
+    "category": "bills",
+    "renewalDay": 1,
+    "isActive": true,
+    "lastProcessedMonth": "2026-02"
+  }
+]

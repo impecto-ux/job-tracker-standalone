@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+:root {
+  --background: #000000;
+  --foreground: #FFFFFF;
+}
+
+@theme {
+  --font-sans: var(--font-outfit);
+  --font-display: var(--font-montserrat);
+  --font-mono: var(--font-mono);
+}
+
+@layer utilities {
+
+  /* BRAND SYSTEM: ECHO ZERO OVERRIDE */
+  .glass-panel {
+    /* No Blur (Low Visual Noise) */
+    @apply bg-black border border-white/20 shadow-none;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+    /* Minimal */
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: #000;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #333;
+    /* High Contrast vs Track */
+    border-radius: 0px;
+    /* Sharp Edges */
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #fff;
+  }
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  letter-spacing: -0.015em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-display), sans-serif;
+  letter-spacing: -0.02em;
+  font-weight: 700;
+}
+
+code,
+.font-mono,
+.task-id {
+  font-family: var(--font-mono), monospace;
+  letter-spacing: 0;
+}
