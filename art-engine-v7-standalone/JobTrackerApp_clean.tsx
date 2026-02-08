@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Plus, Filter, MessageSquare, CheckCircle, CheckCircle2, Check, Clock, AlertCircle, ArrowLeft, Send, RefreshCw, Play, AlertOctagon, XCircle, Trash2, User, Sparkles, X, ChevronDown, LogOut, Settings, LayoutGrid, List, MoreHorizontal, Grid3X3, Columns, Layout, Menu, PanelLeftClose, Minimize2, Maximize2, Zap, Shield, Users, Lock, Activity, RotateCcw, Layers, Grip, Volume2, VolumeX } from 'lucide-react';
 import { io } from 'socket.io-client';
@@ -24,7 +24,6 @@ import { TaskTimerWidget } from '@/components/job-tracker/TaskTimerWidget';
 import { LiveTicker } from '@/components/job-tracker/LiveTicker';
 import { LiveStatusModal } from '@/components/job-tracker/LiveStatusModal';
 import { RevisionRequestModal } from '@/components/job-tracker/RevisionRequestModal';
-import { RevisionReceipt } from '@/components/job-tracker/RevisionReceipt';
 import { GroupDiscoveryModal } from '@/components/job-tracker/GroupDiscoveryModal';
 import { NotificationCenter } from '@/components/job-tracker/NotificationCenter';
 import { KanbanBoard } from '@/components/job-tracker/KanbanBoard';
@@ -55,83 +54,6 @@ interface Task {
 interface JobTrackerProps {
     onExit: () => void;
 }
-
-// --- COMPLETION MODAL ---
-const CompletionModal = ({ isOpen, onClose, onConfirm, taskTitle }: { isOpen: boolean; onClose: () => void; onConfirm: (data: { comment?: string; imageUrl?: string }) => void; taskTitle: string }) => {
-    const [comment, setComment] = useState('');
-    const [imageUrl, setImageUrl] = useState('');
-
-    if (!isOpen) return null;
-
-    return (
-        <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-zinc-900 border border-white/10 rounded-2xl w-full max-w-md shadow-2xl relative overflow-hidden">
-                <div className="p-6 border-b border-white/10 bg-gradient-to-r from-emerald-900/20 to-zinc-900">
-                    <div className="flex items-center gap-3 mb-1">
-                        <div className="p-2 bg-emerald-500/20 rounded-lg text-emerald-400">
-                            <CheckCircle2 size={24} />
-                        </div>
-                        <h2 className="text-xl font-bold text-white">Complete Task</h2>
-                    </div>
-                    <p className="text-zinc-400 text-sm pl-[52px] truncate">"{taskTitle}"</p>
-                </div>
-
-                <div className="p-6 space-y-4">
-                    <p className="text-sm text-zinc-300">Great job! Would you like to add a summary or a screenshot before closing this task?</p>
-
-                    <div>
-                        <label className="text-xs font-bold text-zinc-500 uppercase mb-1.5 block">Completion Note (Optional)</label>
-                        <textarea
-                            className="w-full bg-black/50 border border-white/10 rounded-lg p-3 text-sm text-zinc-200 focus:border-emerald-500/50 outline-none resize-none h-24"
-                            placeholder="What was done? Any key details?"
-                            value={comment}
-                            onChange={e => setComment(e.target.value)}
-                        />
-                    </div>
-
-                    <div>
-                        <label className="text-xs font-bold text-zinc-500 uppercase mb-1.5 block">Image / Proof URL (Optional)</label>
-                        <div className="flex gap-2">
-                            <input
-                                type="text"
-                                className="flex-1 bg-black/50 border border-white/10 rounded-lg p-2.5 text-sm text-zinc-200 focus:border-emerald-500/50 outline-none"
-                                placeholder="https://..."
-                                value={imageUrl}
-                                onChange={e => setImageUrl(e.target.value)}
-                            />
-                            {imageUrl && (
-                                <div className="w-10 h-10 rounded-lg bg-zinc-800 border border-white/10 overflow-hidden flex items-center justify-center shrink-0">
-                                    <img src={imageUrl} alt="Preview" className="w-full h-full object-cover" onError={(e) => (e.currentTarget.style.display = 'none')} />
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-
-                <div className="p-6 pt-2 flex gap-3">
-                    <button
-                        onClick={() => {
-                            setComment('');
-                            setImageUrl('');
-                            onClose();
-                        }}
-                        className="flex-1 py-3 rounded-lg border border-white/10 text-zinc-400 font-bold hover:bg-zinc-800 transition-colors"
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        onClick={() => onConfirm({ comment, imageUrl })}
-                        className="flex-[2] py-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold shadow-lg shadow-emerald-900/20 transition-all flex items-center justify-center gap-2"
-                    >
-                        <CheckCircle2 size={18} />
-                        Confirm Completion
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-};
-
 // ...
 export default function JobTrackerApp({ onExit }: JobTrackerProps) {
     const router = useRouter();
@@ -157,7 +79,6 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
     const [quickAction, setQuickAction] = useState<{ taskId: number; type: 'ask' | 'reject' | 'revision', content: string } | null>(null);
 
     const [isLiveStatusOpen, setIsLiveStatusOpen] = useState(false);
-    const [isCompletionModalOpen, setIsCompletionModalOpen] = useState(false); // Added for completion modal
 
     // Mobile State
     const [mobileTab, setMobileTab] = useState<'tasks' | 'chat' | 'stats'>('tasks');
@@ -336,7 +257,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
         const question = commentBox?.value?.trim();
 
         if (!question) {
-            if (!taskOverride) alert("Lütfen sorunuzu yazın.");
+            if (!taskOverride) alert("L├╝tfen sorunuzu yaz─▒n.");
             return;
         }
 
@@ -358,7 +279,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
 
             } catch (error) {
                 console.error("Failed to send automatic question", error);
-                alert("Mesaj gönderilemedi.");
+                alert("Mesaj g├╢nderilemedi.");
             }
         }
     };
@@ -500,8 +421,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                 startedAt: t.startedAt,
                 completedAt: t.completedAt,
                 score: t.score || 0,
-                category: t.category || 'Uncategorized',
-                revisions: t.revisions || []
+                category: t.category || 'Uncategorized'
             }));
 
             // Log for debugging (User can see this in browser console)
@@ -564,8 +484,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                     completedAt: newTask.completedAt,
                     score: newTask.score || 0,
                     category: newTask.category || 'Uncategorized',
-                    metadata: newTask.metadata,
-                    revisions: newTask.revisions || []
+                    metadata: newTask.metadata
                 };
                 setTasks(prev => [mappedTask, ...prev]);
             });
@@ -608,8 +527,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                             score: updatedTask.score || 0,
                             category: updatedTask.category || 'Uncategorized',
                             metadata: updatedTask.metadata,
-                            updatedAt: updatedTask.updatedAt, // Ensure updatedAt is synced
-                            revisions: updatedTask.revisions || []
+                            updatedAt: updatedTask.updatedAt // Ensure updatedAt is synced
                         };
                     }
                     return t;
@@ -645,16 +563,6 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
             };
         }
     }, [auth.token]);
-
-    // Keep Selected Task in Sync with its counterpart in the main tasks list
-    useEffect(() => {
-        if (selectedTask) {
-            const fresh = tasks.find(t => t.id === selectedTask.id);
-            if (fresh && JSON.stringify(fresh) !== JSON.stringify(selectedTask)) {
-                setSelectedTask(fresh);
-            }
-        }
-    }, [tasks, selectedTask]);
 
     // -- Permission Helper --
     const getTaskPermissions = React.useCallback((task: Task) => {
@@ -866,15 +774,6 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
     };
 
     const handleStatusUpdate = async (taskId: number, newStatus: string) => {
-        if (newStatus === 'done') {
-            const task = tasks.find(t => t.id === taskId);
-            if (task) {
-                setSelectedTask(task);
-                setIsCompletionModalOpen(true);
-            }
-            return;
-        }
-
         try {
             const commentBox = document.getElementById('status-comment') as HTMLTextAreaElement;
             const comment = commentBox?.value;
@@ -898,34 +797,10 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
         } catch (error: any) {
             console.error("Failed to update status", error);
             if (error.response?.status === 403) {
-                alert(error.response?.data?.message || 'Bu işlem için yetkiniz yok. Sadece yetkili departman kullanıcıları bu task üzerinde çalışabilir.');
+                alert(error.response?.data?.message || 'Bu i┼ƒlem i├ºin yetkiniz yok. Sadece yetkili departman kullan─▒c─▒lar─▒ bu task ├╝zerinde ├ºal─▒┼ƒabilir.');
             } else {
-                alert("Görev güncellenemedi. Lütfen tekrar deneyin.");
+                alert("G├╢rev g├╝ncellenemedi. L├╝tfen tekrar deneyin.");
             }
-        }
-    };
-
-    const handleConfirmCompletion = async (data: { comment?: string; imageUrl?: string }) => {
-        if (!selectedTask) return;
-
-        try {
-            await api.patch(`/tasks/${selectedTask.id}`, {
-                status: 'done',
-                comment: data.comment,
-                imageUrl: data.imageUrl
-            });
-
-            // Optimistic update
-            setTasks(prev => prev.map(t => t.id === selectedTask.id ? { ...t, status: 'done' } : t));
-            setSelectedTask(prev => prev ? { ...prev, status: 'done' } : null);
-
-            // Refresh user stats (points etc)
-            api.get('/auth/me').then(res => auth.setUser(res.data)).catch(console.error);
-
-            setIsCompletionModalOpen(false);
-        } catch (error: any) {
-            console.error("Failed to complete task", error);
-            alert("Görev tamamlanamadı. Lütfen tekrar deneyin.");
         }
     };
 
@@ -1255,7 +1130,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                             {/* ... content ... */}
                                             <div className="flex items-center gap-4 flex-1 min-w-0 mr-4">
                                                 <h1 className="text-lg font-bold text-white tracking-tight flex items-center gap-2 shrink-0">
-                                                    <span className="text-emerald-500">❖</span>
+                                                    <span className="text-emerald-500">Γ¥û</span>
                                                     JOB TRACKER
                                                 </h1>
                                                 <div className="h-4 w-px bg-white/10 shrink-0" />
@@ -1425,7 +1300,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                                             setIsLiveStatusOpen(true);
                                                                             setIsAppsMenuOpen(false);
                                                                         }}
-                                                                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 rounded-lg transition-colors group"
+                                                                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-zinc-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors group"
                                                                     >
                                                                         <div className="w-5 h-5 rounded bg-emerald-500/10 flex items-center justify-center text-emerald-400 group-hover:bg-emerald-500 group-hover:text-white transition-colors">
                                                                             <Activity size={12} />
@@ -2084,7 +1959,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                                                 )}
                                                                                 <div className="flex flex-col min-w-0">
                                                                                     <span className="text-sm font-display font-black text-zinc-200 truncate pr-4 tracking-tight">{task.title}</span>
-                                                                                    <span className="text-[10px] text-zinc-500">
+                                                                                    <span className="text-[10px] text-zinc-500 truncate">
                                                                                         Requested by {isMyRequest ? <span className="text-blue-200 font-bold shadow-blue-500/20 drop-shadow-sm">You</span> : task.requester}
                                                                                     </span>
                                                                                 </div>
@@ -2273,7 +2148,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                                                             <div className="w-5 h-5 rounded-full bg-zinc-800 flex items-center justify-center text-[9px] font-bold text-zinc-400 border border-white/10" style={{ backgroundColor: task.owner === 'Unknown' ? '#27272a' : groupColorHsl }}>
                                                                                                 {task.owner ? task.owner[0] : '?'}
                                                                                             </div>
-                                                                                            <span className={`text-[10px] font-black uppercase tracking-tight ${task.status === 'done' ? 'text-emerald-400' : 'text-zinc-400'}`}>
+                                                                                            <span className={`text-[10px] font-black uppercase tracking-tight ${task.status === 'done' ? 'text-emerald-500' : 'text-zinc-400'}`}>
                                                                                                 {task.owner === 'Unknown' ? 'Pool' : task.owner}
                                                                                             </span>
                                                                                         </div>
@@ -2339,6 +2214,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                         )
                                         }
                                     </div >
+
 
 
 
@@ -2486,7 +2362,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                                             </div>
                                                                             <div className="bg-zinc-900/30 p-3 rounded-lg border border-white/5">
                                                                                 <span className="text-zinc-500 text-[10px] font-bold uppercase block mb-1">Priority</span>
-                                                                                <span className={`text-sm font-bold ${selectedTask.priority === 'P1' ? 'text-red-400' : 'text-zinc-300'} `}>
+                                                                                <span className={`text - sm font - bold ${selectedTask.priority === 'P1' ? 'text-red-400' : 'text-zinc-300'} `}>
                                                                                     {selectedTask.priority}
                                                                                 </span>
                                                                             </div>
@@ -2515,13 +2391,32 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                                                 <p className="text-sm font-bold text-zinc-500">No revisions found.</p>
                                                                             </div>
                                                                         ) : (
-                                                                            <div className="space-y-4 py-2">
+                                                                            <div className="relative border-l border-white/10 ml-3 pl-6 space-y-8 py-2">
                                                                                 {[...selectedTask.revisions].sort((a, b) => b.revisionNumber - a.revisionNumber).map((rev) => (
-                                                                                    <RevisionReceipt
-                                                                                        key={rev.id}
-                                                                                        revision={rev}
-                                                                                        taskTitle={selectedTask.title}
-                                                                                    />
+                                                                                    <div key={rev.id} className="relative">
+                                                                                        <div className="absolute -left-[31px] top-0 w-4 h-4 rounded-full bg-amber-500/10 border border-amber-500 flex items-center justify-center">
+                                                                                            <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                                                                        </div>
+                                                                                        <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-4">
+                                                                                            <div className="flex items-center justify-between mb-2">
+                                                                                                <h4 className="text-sm font-black text-amber-500 uppercase tracking-wider">Revision v{rev.revisionNumber}</h4>
+                                                                                                <span className="text-[10px] font-mono text-zinc-500">{new Date(rev.created_at || rev.createdAt).toLocaleDateString()}</span>
+                                                                                            </div>
+                                                                                            <div className="flex items-center gap-2 mb-3">
+                                                                                                <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border ${rev.severity === 'critical' ? 'bg-red-500/10 border-red-500 text-red-500' :
+                                                                                                    rev.severity === 'high' ? 'bg-orange-500/10 border-orange-500 text-orange-500' :
+                                                                                                        'bg-zinc-800 border-white/10 text-zinc-400'
+                                                                                                    }`}>{rev.severity}</span>
+                                                                                                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border bg-zinc-800 border-white/10 text-zinc-400">{rev.type}</span>
+                                                                                            </div>
+                                                                                            <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap">{rev.description}</p>
+                                                                                            {rev.attachmentUrl && (
+                                                                                                <a href={rev.attachmentUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-2 text-xs font-bold text-blue-400 hover:text-blue-300">
+                                                                                                    <LogOut size={10} /> View Attachment
+                                                                                                </a>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    </div>
                                                                                 ))}
                                                                             </div>
                                                                         )}
@@ -2570,22 +2465,8 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                                                 </button>
                                                                             )}
 
-                                                                            {/* 2. START REVISION - Revision Pending -> In Progress */}
-                                                                            {selectedTask.status === 'revision_pending' && (
-                                                                                <button
-                                                                                    onClick={() => handleStatusUpdate(selectedTask.id, 'in_progress')}
-                                                                                    disabled={!isAuthorized}
-                                                                                    className={`col-span-2 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2 group transition-all ${isAuthorized
-                                                                                        ? 'bg-amber-600 hover:bg-amber-500 shadow-lg shadow-amber-900/20'
-                                                                                        : 'bg-zinc-800 text-zinc-500 cursor-not-allowed opacity-50'}`}
-                                                                                >
-                                                                                    <RotateCcw size={16} />
-                                                                                    <span>Start Revision</span>
-                                                                                </button>
-                                                                            )}
-
-                                                                            {/* 3. IN PROGRESS ACTIONS - Complete / Block */}
-                                                                            {(selectedTask.status === 'in_progress' || selectedTask.status === 'revision_in_progress') && (
+                                                                            {/* In Progress Actions - Only if Authorized */}
+                                                                            {selectedTask.status === 'in_progress' && (
                                                                                 <>
                                                                                     <button
                                                                                         onClick={() => handleStatusUpdate(selectedTask.id, 'done')}
@@ -2607,43 +2488,17 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                                                 </>
                                                                             )}
 
-                                                                            {/* 4. REVIEW PHASE - Done -> Approve / Revision */}
-                                                                            {selectedTask.status === 'done' && (
-                                                                                <>
-                                                                                    {/* Request Revision (Primary for Requester) */}
-                                                                                    <button
-                                                                                        onClick={() => setQuickAction({ taskId: selectedTask.id, type: 'revision', content: '' })}
-                                                                                        className="col-span-1 bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 rounded-lg shadow-lg shadow-amber-900/20 flex items-center justify-center gap-2 transition-all hover:scale-[1.02]"
-                                                                                    >
-                                                                                        <RotateCcw size={16} /> Request Revision
-                                                                                    </button>
-
-                                                                                    {/* Approve (Closes loop) */}
-                                                                                    <button
-                                                                                        onClick={() => {
-                                                                                            // Add logic to archive or verify
-                                                                                            alert("Task Approved! (Feature pending backend archive)");
-                                                                                        }}
-                                                                                        className="col-span-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-lg shadow-lg shadow-emerald-900/20 flex items-center justify-center gap-2 transition-all hover:scale-[1.02]"
-                                                                                    >
-                                                                                        <CheckCircle2 size={16} /> Approve & Close
-                                                                                    </button>
-                                                                                </>
-                                                                            )}
-
-                                                                            {/* Re-Queue - Only if Authorized, and not in Done/Review state to avoid clutter */}
-                                                                            {selectedTask.status !== 'done' && (
-                                                                                <button
-                                                                                    onClick={() => handleStatusUpdate(selectedTask.id, 'todo')}
-                                                                                    disabled={!isAuthorized}
-                                                                                    className={`col-span-1 bg-zinc-700 hover:bg-zinc-600 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2 group transition-all ${!isAuthorized && 'bg-zinc-800 hover:bg-zinc-800 text-zinc-500 cursor-not-allowed opacity-50'}`}
-                                                                                    title={isAuthorized ? "Shortcut: Q" : "Unauthorized"}
-                                                                                >
-                                                                                    <RefreshCw size={16} />
-                                                                                    <span>Re-Queue</span>
-                                                                                    {isAuthorized && <span className="ml-2 px-1.5 py-0.5 rounded bg-black/20 text-[10px] text-zinc-300 border border-zinc-500/30 opacity-0 group-hover:opacity-100 transition-opacity uppercase font-mono">Q</span>}
-                                                                                </button>
-                                                                            )}
+                                                                            {/* Re-Queue - Only if Authorized */}
+                                                                            <button
+                                                                                onClick={() => handleStatusUpdate(selectedTask.id, 'todo')}
+                                                                                disabled={!isAuthorized}
+                                                                                className={`col-span-1 bg-zinc-700 hover:bg-zinc-600 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2 group transition-all ${!isAuthorized && 'bg-zinc-800 hover:bg-zinc-800 text-zinc-500 cursor-not-allowed opacity-50'}`}
+                                                                                title={isAuthorized ? "Shortcut: Q" : "Unauthorized"}
+                                                                            >
+                                                                                <RefreshCw size={16} />
+                                                                                <span>Re-Queue</span>
+                                                                                {isAuthorized && <span className="ml-2 px-1.5 py-0.5 rounded bg-black/20 text-[10px] text-zinc-300 border border-zinc-500/30 opacity-0 group-hover:opacity-100 transition-opacity uppercase font-mono">Q</span>}
+                                                                            </button>
 
                                                                             {/* Ask Question - ALWAYS ALLOWED for everyone */}
                                                                             <button
@@ -2656,8 +2511,16 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                                                 <span className="ml-2 px-1.5 py-0.5 rounded bg-black/20 text-[10px] text-sky-200 border border-sky-400/30 opacity-60 group-hover:opacity-100 transition-opacity uppercase font-mono">A</span>
                                                                             </button>
 
+                                                                            {/* Request Revision - ALWAYS ALLOWED (requester usually does this) */}
+                                                                            <button
+                                                                                onClick={() => setQuickAction({ taskId: selectedTask.id, type: 'revision', content: '' })}
+                                                                                className="col-span-1 bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 rounded-lg flex items-center justify-center gap-2 transition-all"
+                                                                            >
+                                                                                <RotateCcw size={16} /> Request Revision
+                                                                            </button>
+
                                                                             {/* Reject Task - Only if Authorized */}
-                                                                            {selectedTask.status !== 'rejected' && selectedTask.status !== 'done' && (
+                                                                            {selectedTask.status !== 'rejected' && (
                                                                                 <button
                                                                                     onClick={() => handleStatusUpdate(selectedTask.id, 'rejected')}
                                                                                     disabled={!isAuthorized}
@@ -2715,13 +2578,6 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
 
                                     {/* LIVE TICKER (Global) */}
                                     <LiveTicker tasks={tasks} />
-
-                                    <CompletionModal
-                                        isOpen={isCompletionModalOpen}
-                                        onClose={() => setIsCompletionModalOpen(false)}
-                                        onConfirm={handleConfirmCompletion}
-                                        taskTitle={selectedTask?.title || "Unknown Task"}
-                                    />
 
                                     <LiveStatusModal
                                         isOpen={isLiveStatusOpen}
@@ -2941,4 +2797,3 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
         </>
     );
 }
-

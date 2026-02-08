@@ -3,6 +3,7 @@ import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import { MoreHorizontal, Plus, Calendar, User as UserIcon, AlertCircle, CheckCircle2, Clock, Lock } from 'lucide-react';
 import api from '@/lib/api';
 import { TaskTimerWidget } from '@/components/job-tracker/TaskTimerWidget';
+import { SquadActivity } from './SquadActivity';
 
 // Types
 interface Task {
@@ -51,7 +52,6 @@ interface KanbanBoardProps {
 const COLUMNS = [
     { id: 'todo', label: 'To Do', color: 'bg-zinc-500', icon: AlertCircle },
     { id: 'in_progress', label: 'In Progress', color: 'bg-blue-500', icon: Clock },
-    { id: 'review', label: 'Review', color: 'bg-purple-500', icon: MoreHorizontal },
     { id: 'done', label: 'Done', color: 'bg-emerald-500', icon: CheckCircle2 },
 ];
 
@@ -63,7 +63,6 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, isAuthorized, o
         const cols: Record<string, Task[]> = {
             todo: [],
             in_progress: [],
-            review: [],
             done: [],
             revision_pending: [],
             revision_in_progress: [],
@@ -74,9 +73,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, isAuthorized, o
             if (cols[status]) {
                 cols[status].push(t);
             } else {
-                // If status is 'revision' (legacy), map to 'revision_pending' or keep in 'review'?
-                // Mapped to 'review' for safety, or 'revision_pending' if we want to migrate visually
-                if (status === 'revision') cols.revision_pending.push(t);
+                if (status === 'revision' || status === 'review') cols.todo.push(t);
                 else cols.todo.push(t);
             }
         });
@@ -113,7 +110,6 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, isAuthorized, o
     const MAIN_COLUMNS = [
         { id: 'todo', label: 'To Do', color: 'bg-zinc-500', icon: AlertCircle },
         { id: 'in_progress', label: 'In Progress', color: 'bg-blue-500', icon: Clock },
-        { id: 'review', label: 'Review', color: 'bg-purple-500', icon: MoreHorizontal }, // Kept for legacy/review phase
         { id: 'done', label: 'Done', color: 'bg-emerald-500', icon: CheckCircle2 },
     ];
 
@@ -123,33 +119,19 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, isAuthorized, o
         { id: 'revision_done', label: 'Revision Done', color: 'bg-emerald-500', icon: CheckCircle2 },
     ];
 
+    const [isRevisionExpanded, setIsRevisionExpanded] = useState(true);
+
+    const onAirCount = (columns['revision_in_progress'] || []).length;
+    const revDoneCount = (columns['revision_done'] || []).length;
+    const revRequestCount = (columns['revision_pending'] || []).length;
+
     return (
-        <div className="flex flex-col h-full gap-6 p-4 overflow-y-auto">
-            {/* TOP: Main Board */}
-            <div className="flex gap-4 overflow-x-auto pb-2 min-h-[400px]">
-                {MAIN_COLUMNS.map(col => (
-                    <ColumnComponent
-                        key={col.id}
-                        col={col}
-                        tasks={columns[col.id] || []}
-                        onDragOver={handleDragOver}
-                        onDrop={(e: React.DragEvent) => handleDrop(e, col.id)}
-                        handleDragStart={handleDragStart}
-                        onTaskClick={onTaskClick}
-                        isAuthorized={isAuthorized}
-                    />
-                ))}
-            </div>
-
-            {/* BOTTOM: Revision Panel */}
-            <div className="border-t-2 border-red-500/30 pt-4 mt-2">
-                <div className="flex items-center gap-2 mb-4 text-red-400">
-                    <AlertCircle size={20} />
-                    <h3 className="text-lg font-bold tracking-wider uppercase">Revision Zone</h3>
-                </div>
-
-                <div className="flex gap-4 overflow-x-auto pb-4 bg-red-950/10 p-4 rounded-xl border border-red-500/10">
-                    {REVISION_COLUMNS.map(col => (
+        <div className="flex flex-col h-full gap-4 p-4 overflow-hidden">
+            {/* TOP: Main Board & Squad Feed */}
+            <div className={`flex gap-4 transition-all duration-300 min-h-0 ${isRevisionExpanded ? 'h-[600px]' : 'flex-1'}`}>
+                {/* Board Columns */}
+                <div className="flex-1 flex gap-4 overflow-x-auto pb-2 custom-scrollbar">
+                    {MAIN_COLUMNS.map(col => (
                         <ColumnComponent
                             key={col.id}
                             col={col}
@@ -159,10 +141,85 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, isAuthorized, o
                             handleDragStart={handleDragStart}
                             onTaskClick={onTaskClick}
                             isAuthorized={isAuthorized}
-                            isRevision={true}
                         />
                     ))}
                 </div>
+
+                {/* Squad Activity Panel */}
+                <SquadActivity tasks={tasks} />
+            </div>
+
+            {/* BOTTOM: Revision Panel */}
+            <div className={`border-t-2 border-red-500/30 pt-4 mt-2 transition-all duration-300 ${isRevisionExpanded ? '' : 'pb-2'}`}>
+                <div
+                    className="flex items-center justify-between mb-4 cursor-pointer group"
+                    onClick={() => setIsRevisionExpanded(!isRevisionExpanded)}
+                >
+                    <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2 text-red-400">
+                            <AlertCircle size={20} />
+                            <h3 className="text-lg font-bold tracking-wider uppercase">Revision Zone</h3>
+                        </div>
+
+                        {/* Summary Bar (Visible when collapsed) */}
+                        <AnimatePresence>
+                            {!isRevisionExpanded && (
+                                <motion.div
+                                    initial={{ opacity: 0, x: -10 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    exit={{ opacity: 0, x: -10 }}
+                                    className="flex items-center gap-4 ml-4 px-4 py-1.5 bg-red-500/10 border border-red-500/20 rounded-full"
+                                >
+                                    <div className="flex items-center gap-2">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                                        <span className="text-[10px] font-black text-red-400 uppercase tracking-widest">Requests: {revRequestCount}</span>
+                                    </div>
+                                    <div className="w-px h-3 bg-red-500/20" />
+                                    <div className="flex items-center gap-2">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                        <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest">On Air: {onAirCount}</span>
+                                    </div>
+                                    <div className="w-px h-3 bg-red-500/20" />
+                                    <div className="flex items-center gap-2">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                        <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Completed: {revDoneCount}</span>
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </div>
+
+                    <div className="p-1 px-3 rounded-lg bg-zinc-900 border border-white/5 text-zinc-500 group-hover:text-white transition-colors text-xs font-bold uppercase tracking-tighter">
+                        {isRevisionExpanded ? 'Collapse' : 'Expand'}
+                    </div>
+                </div>
+
+                <AnimatePresence>
+                    {isRevisionExpanded && (
+                        <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="overflow-hidden"
+                        >
+                            <div className="flex gap-4 overflow-x-auto pb-4 bg-red-950/10 p-4 rounded-xl border border-red-500/10">
+                                {REVISION_COLUMNS.map(col => (
+                                    <ColumnComponent
+                                        key={col.id}
+                                        col={col}
+                                        tasks={columns[col.id] || []}
+                                        onDragOver={handleDragOver}
+                                        onDrop={(e: React.DragEvent) => handleDrop(e, col.id)}
+                                        handleDragStart={handleDragStart}
+                                        onTaskClick={onTaskClick}
+                                        isAuthorized={isAuthorized}
+                                        isRevision={true}
+                                    />
+                                ))}
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </div>
         </div>
     );
@@ -172,7 +229,7 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, isAuthorized, o
 const ColumnComponent = ({ col, tasks, onDragOver, onDrop, handleDragStart, onTaskClick, isAuthorized, isRevision = false }: any) => {
     return (
         <div
-            className={`flex-shrink-0 w-80 flex flex-col backdrop-blur-md rounded-xl border 
+            className={`flex-shrink-0 min-w-[320px] flex-1 flex flex-col backdrop-blur-md rounded-xl border h-full
                 ${isRevision ? 'bg-red-900/5 border-red-500/20' : 'bg-zinc-900/50 border-white/5'}
             `}
             onDragOver={onDragOver}
@@ -195,7 +252,7 @@ const ColumnComponent = ({ col, tasks, onDragOver, onDrop, handleDragStart, onTa
             </div>
 
             {/* Task List */}
-            <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[200px] max-h-[500px]">
+            <div className="flex-1 overflow-y-auto p-2 space-y-2 custom-scrollbar min-h-0">
                 {tasks.map((task: any) => {
                     const canEdit = isAuthorized(task);
                     return (

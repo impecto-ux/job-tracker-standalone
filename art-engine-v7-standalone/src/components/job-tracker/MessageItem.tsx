@@ -170,7 +170,11 @@ const MessageItem: React.FC<MessageItemProps> = ({
         const groupLine = lines.find(l => l.includes('Group:'));
         const group = groupLine ? groupLine.split('Group:')[1].trim() : '';
 
-        return { taskNumber, status, isCreated, isUpdated, isPriorityChange, title, mentions, group };
+        // Extract Note (completion comment)
+        const noteLine = lines.find(l => l.includes('Note:'));
+        const note = noteLine ? noteLine.split('Note:')[1]?.replace(/["*📝]/g, '').trim() : '';
+
+        return { taskNumber, status, isCreated, isUpdated, isPriorityChange, title, mentions, group, note };
     };
 
     const renderBotUI = () => {
@@ -248,6 +252,14 @@ const MessageItem: React.FC<MessageItemProps> = ({
                                         </div>
                                     )}
                                 </div>
+
+                                {/* Note/Comment Display */}
+                                {data.note && (
+                                    <div className="mt-3 p-3 rounded-lg bg-white/5 border border-white/10">
+                                        <div className="text-[9px] uppercase tracking-wider text-emerald-500 font-bold mb-1">📝 Completion Note</div>
+                                        <div className="text-[12px] text-zinc-200 italic">"{data.note}"</div>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
