@@ -299,12 +299,17 @@ export class TasksService implements OnApplicationBootstrap {
     }
 
     // 2. Add Comment if provided
-    if (comment) {
-      await this.addComment(id, comment, userId);
+    const note = comment || updateTaskDto.comment;
+    if (note) {
+      await this.addComment(id, note, userId);
     }
 
     // 3. Notify Channel if changes detected
     const changes: string[] = [];
+    // Define note/comment earlier to check it
+    // const note = comment || updateTaskDto.comment; // Redeclared
+
+
     if (newStatus && oldStatus !== newStatus) {
       changes.push(`Status: **${newStatus.toUpperCase().replace('_', ' ')}**`);
     }
@@ -313,6 +318,17 @@ export class TasksService implements OnApplicationBootstrap {
     }
     if (updateTaskDto.description && updateTaskDto.description !== oldDesc) {
       changes.push(`Description: **${updateTaskDto.description}**`);
+    }
+    // FIX: Trigger notification if a comment is added, even if status didn't change (or changed in a previous immediate call)
+    if (note) {
+      // We don't necessarily push to 'changes' string array to avoid redundant text, 
+      // but we ensure the block is entered.
+      // However, to satisfy 'changes.length > 0', we can push a marker or use a separate flag.
+      // Let's just push a generic "Note Added" to changes if it's the *only* change, or rely on a flag.
+      // Simplest: push to changes if status didn't change, so users know why they got a ping.
+      if (!changes.length) {
+        changes.push(`Note Added`);
+      }
     }
 
     if (changes.length > 0) {
@@ -350,7 +366,10 @@ export class TasksService implements OnApplicationBootstrap {
         if (updateTaskDto.title || updateTaskDto.description) {
           message += `\n\n**Full Details:**\nTitle: ${updatedTask.title}\nDesc: ${updatedTask.description}\nStatus: ${updatedTask.status}`;
         }
-        if (comment) message += `\nNote: "${comment}"`;
+
+        const finalComment = comment || updateTaskDto.comment;
+        if (finalComment) message += `\n\n📝 **Note:** "${finalComment}"`;
+        if (updateTaskDto.imageUrl) message += `\n\n📷 **Image Attached:** ${updateTaskDto.imageUrl}`;
 
         // SMART MENTION: Tag Requester (who asked) and Owner (who did it)
         const mentionUsers: any[] = [];

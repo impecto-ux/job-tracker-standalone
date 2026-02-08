@@ -14,4 +14,8 @@ export class UpdateTaskDto extends PartialType(CreateTaskDto) {
     @IsString()
     @IsOptional()
     comment?: string;
+
+    @IsString()
+    @IsOptional()
+    imageUrl?: string;
 }

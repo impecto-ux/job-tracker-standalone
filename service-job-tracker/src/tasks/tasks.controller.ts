@@ -53,6 +53,7 @@ export class TasksController {
   @Patch(':id')
   update(@Param('id') id: string, @Body() body: UpdateTaskDto & { comment?: string }, @Request() req) {
     const userId = req.user.userId;
+    console.log(`[TasksController] Update Task #${id} payload:`, JSON.stringify(body));
     return this.tasksService.update(+id, body, userId, body.comment);
   }
 
