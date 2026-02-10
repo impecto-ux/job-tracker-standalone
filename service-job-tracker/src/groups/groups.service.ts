@@ -1,6 +1,6 @@
 import { Injectable, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, Brackets } from 'typeorm';
+import { Repository, LessThan, Brackets, In } from 'typeorm';
 import { Group } from './entities/group.entity';
 import { UsersService } from '../users/users.service';
 import { ChannelsService } from '../channels/channels.service';
@@ -119,6 +119,14 @@ export class GroupsService {
 
     async findOneByChannelId(channelId: number) {
         return this.groupsRepository.findOne({ where: { channelId }, relations: ['targetDepartment'] });
+    }
+
+    async findByChannelIds(channelIds: number[]) {
+        if (channelIds.length === 0) return [];
+        return this.groupsRepository.find({
+            where: { channelId: In(channelIds) },
+            relations: ['targetDepartment']
+        });
     }
 
     async update(id: number, updateGroupDto: any, requesterId?: number, requesterRole?: string) {

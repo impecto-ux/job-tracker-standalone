@@ -33,6 +33,12 @@ export class Comment {
     @Column({ name: 'user_id' })
     userId: number;
 
+    @Column({ type: 'float', nullable: true })
+    timestamp: number;
+
+    @Column({ type: 'simple-json', nullable: true })
+    context: any;
+
     @CreateDateColumn({ name: 'created_at' })
     createdAt: Date;
 }

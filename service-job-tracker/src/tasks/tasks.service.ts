@@ -249,6 +249,12 @@ export class TasksService implements OnApplicationBootstrap {
 
       // DONE Logic (Includes Approval)
       if (newStatus === 'done' && oldStatus !== 'done') {
+        // Save Resolution Note
+        const resolutionNote = comment || updateTaskDto.comment;
+        if (resolutionNote) {
+          task.resolutionNote = resolutionNote;
+        }
+
         // Completed: Add Points
         if (task.ownerId) {
           console.log(`[TasksService] Awarding ${task.score} points to User ${task.ownerId}`);
@@ -433,7 +439,7 @@ export class TasksService implements OnApplicationBootstrap {
     return updatedTask;
   }
 
-  async addComment(taskId: number, content: string, userId: number, mediaUrl?: string, mediaType?: string): Promise<Comment> {
+  async addComment(taskId: number, content: string, userId: number, mediaUrl?: string, mediaType?: string, timestamp?: number, context?: any): Promise<Comment> {
     const task = await this.findOne(taskId);
     if (!task) throw new NotFoundException();
 
@@ -443,7 +449,9 @@ export class TasksService implements OnApplicationBootstrap {
       userId,
       source: 'web',
       mediaUrl,
-      mediaType
+      mediaType,
+      timestamp,
+      context
     });
     return this.commentsRepository.save(comment);
   }
@@ -560,8 +568,8 @@ export class TasksService implements OnApplicationBootstrap {
     }
 
     // 1. Create Revision Record
+    console.log(`[DEBUG] Creating revision for Task #${task.id}`);
     const revision = this.revisionsRepository.create({
-      task: { id: task.id } as any, // Force explicit relation by ID to avoid TypeORM issues
       revisionNumber: (task.revisionCount || 0) + 1,
       type: dto.type || 'other',
       severity: dto.severity || 'low',
@@ -569,7 +577,14 @@ export class TasksService implements OnApplicationBootstrap {
       attachmentUrl: dto.attachmentUrl,
       requestedBy: { id: userId } as any
     });
-    await this.revisionsRepository.save(revision);
+    const savedRevision = await this.revisionsRepository.save(revision);
+
+    // Manually set task_id since TypeORM relation isn't saving it properly
+    await this.revisionsRepository.query(
+      'UPDATE task_revisions SET task_id = ? WHERE id = ?',
+      [task.id, savedRevision.id]
+    );
+    console.log(`[DEBUG] Saved revision ID: ${savedRevision.id}, updated task_id to: ${task.id} using raw SQL`);
 
     // 2. Update Task State
     task.revisionCount = revision.revisionNumber;

@@ -1,71 +1,37 @@
-const { DataSource } = require('typeorm');
-// Import entities - minimal definition to avoid import issues
-const EntitySchema = require('typeorm').EntitySchema;
+const Database = require('sql.js');
+const fs = require('fs');
+const path = require('path');
 
-const TaskSchema = new EntitySchema({
-    name: "Task",
-    tableName: "tasks",
-    columns: {
-        id: { primary: true, type: "int", generated: true },
-        title: { type: "varchar" },
-        status: { type: "varchar" }
-    },
-    relations: {
-        revisions: {
-            type: "one-to-many",
-            target: "TaskRevision",
-            inverseSide: "task"
-        }
+async function main() {
+    const SQL = await Database();
+    const fileBuffer = fs.readFileSync(path.join(__dirname, 'job_tracker.sqlite'));
+    const db = new SQL.Database(fileBuffer);
+
+    // Dump ALL revisions raw
+    console.log("=== RAW REVISIONS TABLE DUMP ===");
+    const allRevs = db.exec("SELECT * FROM task_revisions ORDER BY id DESC LIMIT 10;");
+    if (allRevs.length > 0) {
+        console.log("Columns:", allRevs[0].columns.join(' | '));
+        console.log("-".repeat(80));
+        allRevs[0].values.forEach(row => {
+            console.log(row.map((v, i) => `${allRevs[0].columns[i]}=${v}`).join(' | '));
+        });
+    } else {
+        console.log("  NO REVISIONS IN TABLE!");
     }
-});
 
-const RevisionSchema = new EntitySchema({
-    name: "TaskRevision",
-    tableName: "task_revisions",
-    columns: {
-        id: { primary: true, type: "int", generated: true },
-        description: { type: "text" },
-        taskId: { type: "int", name: "task_id" }
-    },
-    relations: {
-        task: {
-            type: "many-to-one",
-            target: "Task",
-            joinColumn: { name: "task_id" },
-            inverseSide: "revisions"
-        }
+    // Show tasks in revision status
+    console.log("\n=== TASKS IN REVISION STATUS ===");
+    const revTasks = db.exec("SELECT id, title, status, revision_count FROM tasks WHERE status LIKE '%revision%' ORDER BY id DESC;");
+    if (revTasks.length > 0 && revTasks[0].values.length > 0) {
+        revTasks[0].values.forEach(row => {
+            console.log(`  Task #${row[0]}: "${row[1]}" | Status: ${row[2]} | RevCount: ${row[3]}`);
+        });
+    } else {
+        console.log("  No tasks in revision status");
     }
-});
 
-const AppDataSource = new DataSource({
-    type: "sqlite",
-    database: "job_tracker.sqlite", // Verify this path!
-    entities: [TaskSchema, RevisionSchema],
-    synchronize: false,
-    logging: false,
-});
-
-async function check() {
-    try {
-        await AppDataSource.initialize();
-        console.log("Database connected.");
-
-        const allRevisions = await AppDataSource.query("SELECT * FROM task_revisions");
-        console.log("Raw Revisions Dump:", allRevisions);
-
-        const allTasks = await AppDataSource.query("SELECT id, title, status FROM tasks");
-        console.log(`Raw Tasks Count: ${allTasks.length}`);
-        const task33 = allTasks.find(t => t.id === 33);
-        console.log("Task #33 raw:", task33);
-
-        // Also check raw table count
-        const revCount = await AppDataSource.query("SELECT COUNT(*) as count FROM task_revisions");
-        console.log("Raw revision count:", revCount);
-
-        await AppDataSource.destroy();
-    } catch (error) {
-        console.error("Error:", error);
-    }
+    db.close();
 }
 
-check();
+main().catch(console.error);

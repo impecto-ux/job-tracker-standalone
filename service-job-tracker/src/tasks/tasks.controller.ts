@@ -64,9 +64,9 @@ export class TasksController {
   }
 
   @Post(':id/comments')
-  addComment(@Param('id') id: string, @Body() body: { content: string; mediaUrl?: string; mediaType?: string }, @Request() req) {
+  addComment(@Param('id') id: string, @Body() body: { content: string; mediaUrl?: string; mediaType?: string; timestamp?: number; context?: any }, @Request() req) {
     const userId = req.user.userId;
-    return this.tasksService.addComment(+id, body.content, userId, body.mediaUrl, body.mediaType);
+    return this.tasksService.addComment(+id, body.content, userId, body.mediaUrl, body.mediaType, body.timestamp, body.context);
   }
 
   @Post(':id/request-revision')

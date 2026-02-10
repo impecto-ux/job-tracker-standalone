@@ -59,6 +59,9 @@ export class Task {
     @Column({ name: 'revision_channel_id', nullable: true })
     revisionChannelId: number;
 
+    @Column({ name: 'resolution_note', type: 'text', nullable: true })
+    resolutionNote: string;
+
     @Column({ type: 'simple-json', default: '{}' })
     metadata: any;
 
