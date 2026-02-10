@@ -1,16 +1,13 @@
 
 "use client";
 
-import { useState, useEffect } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
-import Dashboard from '@/components/dashboard/Dashboard';
-import CreativeStudio from '@/apps/CreativeStudio';
-import OnyxApp from '@/apps/OnyxApp';
-import HashTrackerApp from '@/apps/HashTrackerApp';
-import PosterStudioApp from '@/apps/PosterStudioApp';
-import JobTrackerApp from '@/apps/JobTrackerApp';
+import dynamic from 'next/dynamic';
 
-type AppId = 'dashboard' | 'studio' | 'onyx' | 'hashtracker' | 'poster' | 'jobtracker';
+// Dynamic import to avoid hydration mismatches caused by browser extensions
+const JobTrackerApp = dynamic(() => import('@/apps/JobTrackerApp'), {
+  ssr: false,
+  loading: () => <div className="h-screen w-screen bg-black flex items-center justify-center text-zinc-500">Loading...</div>
+});
 
 export default function Home() {
   return (

@@ -253,12 +253,56 @@ const MessageItem: React.FC<MessageItemProps> = ({
                                     )}
                                 </div>
 
-                                {/* Note/Comment Display */}
+                                {/* Note/Comment Display - Bold & Modern */}
                                 {data.note && (
-                                    <div className="mt-3 p-3 rounded-lg bg-white/5 border border-white/10">
-                                        <div className="text-[9px] uppercase tracking-wider text-emerald-500 font-bold mb-1">📝 Completion Note</div>
-                                        <div className="text-[12px] text-zinc-200 italic">"{data.note}"</div>
-                                    </div>
+                                    <motion.div
+                                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
+                                        className="mt-4 relative group/note overflow-hidden"
+                                    >
+                                        {/* Animated Background Glow */}
+                                        <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/20 via-teal-500/20 to-cyan-500/20 blur-xl opacity-50 group-hover/note:opacity-80 transition-opacity duration-500" />
+
+                                        {/* Main Card */}
+                                        <div className="relative rounded-xl overflow-hidden shadow-[0_8px_32px_rgba(16,185,129,0.15)] group-hover/note:shadow-[0_12px_40px_rgba(16,185,129,0.25)] transition-shadow duration-500">
+                                            {/* Gradient Border Effect */}
+                                            <div className="absolute inset-0 bg-gradient-to-br from-emerald-400/30 via-teal-500/30 to-cyan-400/30 rounded-xl" />
+
+                                            {/* Inner Content */}
+                                            <div className="relative m-[1px] rounded-xl bg-gradient-to-br from-[#0a1f1a] via-[#0d1f1d] to-[#081815] p-4">
+                                                {/* Top Shine */}
+                                                <div className="absolute top-0 inset-x-0 h-[1px] bg-gradient-to-r from-transparent via-emerald-400/50 to-transparent" />
+
+                                                {/* Header with Icon */}
+                                                <div className="flex items-center gap-2.5 mb-3">
+                                                    <div className="relative">
+                                                        {/* Icon Glow */}
+                                                        <div className="absolute inset-0 bg-emerald-400 blur-lg opacity-40 animate-pulse" />
+                                                        <div className="relative w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/30">
+                                                            <Check size={16} strokeWidth={3} className="text-white drop-shadow-sm" />
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex flex-col">
+                                                        <span className="text-[10px] font-black uppercase tracking-[0.2em] bg-gradient-to-r from-emerald-300 via-teal-200 to-cyan-300 bg-clip-text text-transparent">
+                                                            Completion Note
+                                                        </span>
+                                                        <span className="text-[8px] text-emerald-600/60 font-mono tracking-wide">TASK RESOLVED</span>
+                                                    </div>
+                                                </div>
+
+                                                {/* Note Content */}
+                                                <div className="relative pl-4 border-l-2 border-emerald-500/30">
+                                                    <div className="text-[13px] text-zinc-100 font-medium leading-relaxed">
+                                                        "{data.note}"
+                                                    </div>
+                                                </div>
+
+                                                {/* Bottom Decorative Line */}
+                                                <div className="mt-4 h-[1px] bg-gradient-to-r from-emerald-500/30 via-transparent to-teal-500/30" />
+                                            </div>
+                                        </div>
+                                    </motion.div>
                                 )}
                             </div>
                         </div>

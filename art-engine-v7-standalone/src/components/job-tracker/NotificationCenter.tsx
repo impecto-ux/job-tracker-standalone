@@ -83,7 +83,7 @@ export const NotificationCenter = () => {
                         className="fixed inset-0 z-40"
                         onClick={() => setIsOpen(false)}
                     />
-                    <div className="absolute right-0 mt-2 w-80 bg-[#09090b] border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden flex flex-col max-h-[80vh]">
+                    <div className="fixed top-16 right-4 left-4 w-auto sm:absolute sm:top-full sm:right-0 sm:left-auto sm:w-80 mt-2 bg-[#09090b] border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden flex flex-col max-h-[80vh]">
                         <div className="p-3 border-b border-white/5 flex items-center justify-between bg-zinc-900/50 backdrop-blur-sm">
                             <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Notifications</h3>
                             {unreadCount > 0 && (

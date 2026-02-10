@@ -47,6 +47,17 @@ export const UnifiedAssetsBoard: React.FC = () => {
         fetchAssets();
     }, [activeTab, selectedChannel, search]);
 
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape' && lightboxAsset) {
+                setLightboxAsset(null);
+                e.stopPropagation();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [lightboxAsset]);
+
     const fetchAssets = async () => {
         setIsLoading(true);
         try {
@@ -87,12 +98,12 @@ export const UnifiedAssetsBoard: React.FC = () => {
     return (
         <div className="flex flex-col h-full bg-[#0b141a] text-[#e9edef] overflow-hidden font-sans">
             {/* TOOLBAR */}
-            <div className="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-zinc-900/50 shrink-0 backdrop-blur-md z-10">
-                <div className="flex items-center gap-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between p-4 md:px-6 md:h-16 gap-4 bg-zinc-900/50 shrink-0 backdrop-blur-md z-10 border-b border-white/5">
+                <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
                     <h2 className="text-xl font-bold tracking-tight whitespace-nowrap">FILE VAULT</h2>
 
                     {/* Filters */}
-                    <div className="flex bg-black/40 p-1 rounded-lg border border-white/5 gap-1">
+                    <div className="flex bg-black/40 p-1 rounded-lg border border-white/5 gap-1 overflow-x-auto max-w-[200px] md:max-w-none scrollbar-hide">
                         {[
                             { id: 'all', label: 'All', icon: <LayoutGrid size={14} /> },
                             { id: 'image', label: 'Photos', icon: <ImageIcon size={14} /> },
@@ -102,7 +113,7 @@ export const UnifiedAssetsBoard: React.FC = () => {
                             <button
                                 key={tab.id}
                                 onClick={() => setActiveTab(tab.id as any)}
-                                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${activeTab === tab.id ? 'bg-emerald-600 text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-300'}`}
+                                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-bold transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-emerald-600 text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-300'}`}
                             >
                                 {tab.icon}
                                 {tab.label}
@@ -115,7 +126,7 @@ export const UnifiedAssetsBoard: React.FC = () => {
                         <select
                             value={selectedChannel}
                             onChange={(e) => setSelectedChannel(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
-                            className="bg-black/40 border border-white/5 rounded-lg pl-3 pr-8 py-1.5 text-xs font-bold text-zinc-300 focus:outline-none focus:ring-1 focus:ring-emerald-500 appearance-none hover:bg-zinc-800 cursor-pointer min-w-[140px]"
+                            className="bg-black/40 border border-white/5 rounded-lg pl-3 pr-8 py-1.5 text-xs font-bold text-zinc-300 focus:outline-none focus:ring-1 focus:ring-emerald-500 appearance-none hover:bg-zinc-800 cursor-pointer min-w-[120px]"
                         >
                             <option value="all">All Groups</option>
                             {chat.channels.map(c => (
@@ -126,7 +137,7 @@ export const UnifiedAssetsBoard: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="flex items-center gap-4 flex-1 justify-end">
+                <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end">
                     {/* Search */}
                     <div className="relative max-w-xs w-full">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={16} />

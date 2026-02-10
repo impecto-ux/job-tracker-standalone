@@ -11,6 +11,7 @@ import AlmanacApp from '@/apps/AlmanacApp';
 import LoginModal from '@/components/auth/LoginModal';
 import UserProfileModal from '@/components/auth/UserProfileModal';
 import MemberProfileModal from '@/components/job-tracker/MemberProfileModal';
+import { QRCodeSVG } from 'qrcode.react';
 import { UserManagementPanel } from '@/components/job-tracker/UserManagementPanel';
 
 import Link from 'next/link';
@@ -28,6 +29,7 @@ import { RevisionReceipt } from '@/components/job-tracker/RevisionReceipt';
 import { GroupDiscoveryModal } from '@/components/job-tracker/GroupDiscoveryModal';
 import { NotificationCenter } from '@/components/job-tracker/NotificationCenter';
 import { KanbanBoard } from '@/components/job-tracker/KanbanBoard';
+import { VideoReviewPanel } from '@/components/job-tracker/VideoReviewPanel';
 
 interface Task {
     id: number;
@@ -50,6 +52,9 @@ interface Task {
     group?: string; // Added for grouping logic
     revisionCount?: number;
     revisions?: any[];
+    resolutionNote?: string;
+    comments?: any[];
+    commentCount?: number;
 }
 
 interface JobTrackerProps {
@@ -158,18 +163,31 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
 
     const [isLiveStatusOpen, setIsLiveStatusOpen] = useState(false);
     const [isCompletionModalOpen, setIsCompletionModalOpen] = useState(false); // Added for completion modal
+    const [isVideoReviewOpen, setIsVideoReviewOpen] = useState(false);
+    const [isConnectPhoneOpen, setIsConnectPhoneOpen] = useState(false);
+
+    const isVideoFile = (url: string) => {
+        return url.match(/\.(mp4|webm|mov|mkv)($|\?)/i);
+    };
 
     // Mobile State
     const [mobileTab, setMobileTab] = useState<'tasks' | 'chat' | 'stats'>('tasks');
     const [isMobile, setIsMobile] = useState(false);
 
     useEffect(() => {
-        const checkMobile = () => setIsMobile(window.innerWidth < 1024);
+        const checkMobile = () => setIsMobile(window.innerWidth < 768);
         checkMobile();
         window.addEventListener('resize', checkMobile);
         return () => window.removeEventListener('resize', checkMobile);
     }, []);
     const [detailTab, setDetailTab] = useState<'details' | 'revisions'>('details');
+
+    // Mobile View Enforcement
+    useEffect(() => {
+        if (isMobile) {
+            setViewMode('list');
+        }
+    }, [isMobile]);
 
     // Data State
     const [tasks, setTasks] = useState<Task[]>([]);
@@ -211,6 +229,36 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
             }
         };
     }, []);
+
+    // -- GLOBAL KEYBOARD SHORTCUTS (ESC) --
+    useEffect(() => {
+        const handleGlobalEsc = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                // Priority 1: Active Modals
+                if (isVideoReviewOpen) return setIsVideoReviewOpen(false);
+                if (isCompletionModalOpen) return setIsCompletionModalOpen(false);
+                if (isUserManagementOpen) return setIsUserManagementOpen(false);
+                if (isAdminDashboardOpen) return setIsAdminDashboardOpen(false);
+                if (isConnectPhoneOpen) return setIsConnectPhoneOpen(false);
+                if (quickAction) return setQuickAction(null);
+
+                // Priority 2: Slide-overs / Panels
+                if (isLiveStatusOpen) return setIsLiveStatusOpen(false);
+                if (selectedTask) return setSelectedTask(null);
+
+                // Priority 3: Interactions
+                if (isSelectionMode) {
+                    setIsSelectionMode(false);
+                    setSelectedTaskIds(new Set());
+                    return;
+                }
+                if (showMatrix) return setShowMatrix(false);
+            }
+        };
+        window.addEventListener('keydown', handleGlobalEsc);
+        return () => window.removeEventListener('keydown', handleGlobalEsc);
+    }, [isVideoReviewOpen, isCompletionModalOpen, isUserManagementOpen, isAdminDashboardOpen, quickAction,
+        isLiveStatusOpen, selectedTask, isSelectionMode, showMatrix]);
 
     const playNotificationSound = (type: 'message' | 'task') => {
         if (isMuted) {
@@ -501,7 +549,13 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                 completedAt: t.completedAt,
                 score: t.score || 0,
                 category: t.category || 'Uncategorized',
-                revisions: t.revisions || []
+                revisions: t.revisions || [],
+                revisionCount: t.revisionCount || 0,
+                resolutionNote: t.resolutionNote || '',
+                metadata: t.metadata || {},
+                group: t.group?.name || t.metadata?.group || '',
+                comments: t.comments || [],
+                commentCount: t.comments?.length || 0
             }));
 
             // Log for debugging (User can see this in browser console)
@@ -915,9 +969,9 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                 imageUrl: data.imageUrl
             });
 
-            // Optimistic update
-            setTasks(prev => prev.map(t => t.id === selectedTask.id ? { ...t, status: 'done' } : t));
-            setSelectedTask(prev => prev ? { ...prev, status: 'done' } : null);
+            // Optimistic update - include resolutionNote
+            setTasks(prev => prev.map(t => t.id === selectedTask.id ? { ...t, status: 'done', resolutionNote: data.comment } : t));
+            setSelectedTask(prev => prev ? { ...prev, status: 'done', resolutionNote: data.comment } : null);
 
             // Refresh user stats (points etc)
             api.get('/auth/me').then(res => auth.setUser(res.data)).catch(console.error);
@@ -1077,7 +1131,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
             <div className={`h-full w-full bg-black text-[#e9edef] font-sans flex flex-col overflow-hidden pb-12 md:flex-row ${isResizing ? 'cursor-col-resize select-none' : ''} relative`}>
                 {/* Collapsed UI */}
                 {/* Collapsed UI */}
-                <div className={`h-full w-full md:w-20 flex flex-col items-center py-4 gap-4 ${isChatCollapsed ? 'flex' : 'hidden'}`}>
+                <div className={`hidden md:flex md:w-20 flex-col items-center py-4 gap-4 ${isChatCollapsed ? 'flex' : 'hidden'}`}>
                     <button onClick={(e) => { e.stopPropagation(); setIsChatCollapsed(false); }} className="p-2 text-zinc-500 hover:text-white transition-colors">
                         <Menu size={20} />
                     </button>
@@ -1164,12 +1218,13 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                 {/* Expanded UI (Always Mounted, Hidden When Collapsed) */}
                 <div
                     style={{ width: isMobile ? '100%' : `${sidebarWidth}px` }}
-                    className={`flex-shrink-0 h-full relative ${isChatCollapsed ? 'hidden' : 'flex'}`}
+                    className={`flex-shrink-0 h-full relative ${(!isMobile && isChatCollapsed) || (isMobile && (mobileTab !== 'chat' || !!chat.activeChannelId)) ? 'hidden' : 'flex'}`}
                 >
                     <ChatSidebar
                         notificationStats={channelStats}
                         unreadCounts={unreadCounts}
                         mentionCounts={mentionCounts} // Pass mentions
+                        isMobileLayout={isMobile}
                         onCreateGroup={(view = 'groups_root') => {
                             setUserManagementInitialView(view);
                             setIsUserManagementOpen(true);
@@ -1218,7 +1273,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                     )}
                 </div>
                 {/* MAIN DASHBOARD (Right - Remaining) */}
-                <div className={`flex-1 flex flex-row min-w-0 bg-zinc-950 overflow-hidden relative ${mobileTab === 'chat' ? 'hidden md:flex' : 'flex'}`}>
+                <div className={`flex-1 flex flex-row min-w-0 bg-zinc-950 overflow-hidden relative ${mobileTab === 'chat' && !chat.activeChannelId ? 'hidden md:flex' : 'flex'}`}>
 
                     {/* DASHBOARD CONTENT (Center Pane) */}
                     {/* On Desktop: Always visible (lg:flex). On Mobile: Hidden if chat active. */}
@@ -1251,12 +1306,12 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                 >
                                     {/* HEADER */}
                                     {(!isMobile || mobileTab === 'tasks') && (
-                                        <div className="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-zinc-900/50 shrink-0 backdrop-blur-sm z-[100]">
+                                        <div className="h-16 border-b border-white/5 flex items-center justify-between px-4 md:px-6 bg-zinc-900/50 shrink-0 backdrop-blur-sm z-[100]">
                                             {/* ... content ... */}
                                             <div className="flex items-center gap-4 flex-1 min-w-0 mr-4">
                                                 <h1 className="text-lg font-bold text-white tracking-tight flex items-center gap-2 shrink-0">
                                                     <span className="text-emerald-500">❖</span>
-                                                    JOB TRACKER
+                                                    <span className="hidden md:inline">JOB TRACKER</span>
                                                 </h1>
                                                 <div className="h-4 w-px bg-white/10 shrink-0" />
 
@@ -1275,7 +1330,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                     </div>
 
                                                     {/* NEW: Department Filter */}
-                                                    <div className="relative group min-w-[180px] shrink-0">
+                                                    <div className="hidden lg:block relative group min-w-[180px] shrink-0">
                                                         <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10 text-zinc-500">
                                                             <Filter size={14} />
                                                         </div>
@@ -1316,31 +1371,33 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                         </button>
                                                     </div>
 
-                                                    {/* NEW: View Mode Toggle (Hidden on lg/xl) */}
-                                                    <div className="hidden 2xl:flex bg-zinc-900 p-1 rounded-lg border border-white/5 gap-1 shrink-0">
-                                                        <button
-                                                            onClick={() => setViewMode('board')}
-                                                            className={`p-1.5 rounded transition-colors ${viewMode === 'board' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
-                                                            title="Board View"
-                                                        >
-                                                            <Columns size={14} />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => setViewMode('list')}
-                                                            className={`p-1.5 rounded transition-colors ${viewMode === 'list' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
-                                                            title="List View"
-                                                        >
-                                                            <List size={14} />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => setViewMode('grid')}
-                                                            className={`p-1.5 rounded transition-colors ${viewMode === 'grid' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
-                                                            title="Gallery View"
-                                                        >
-                                                            <Grid3X3 size={14} />
-                                                        </button>
-                                                    </div>
-                                                    <div className="flex bg-zinc-900 p-1 rounded-lg border border-white/5 gap-1 shrink-0 ml-2">
+                                                    {/* NEW: View Mode Toggle (Hidden on lg/xl/mobile) - Forced to List on Mobile */}
+                                                    {!isMobile && (
+                                                        <div className="hidden 2xl:flex bg-zinc-900 p-1 rounded-lg border border-white/5 gap-1 shrink-0">
+                                                            <button
+                                                                onClick={() => setViewMode('board')}
+                                                                className={`p-1.5 rounded transition-colors ${viewMode === 'board' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                                                                title="Board View"
+                                                            >
+                                                                <Columns size={14} />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => setViewMode('list')}
+                                                                className={`p-1.5 rounded transition-colors ${viewMode === 'list' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                                                                title="List View"
+                                                            >
+                                                                <List size={14} />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => setViewMode('grid')}
+                                                                className={`p-1.5 rounded transition-colors ${viewMode === 'grid' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                                                                title="Gallery View"
+                                                            >
+                                                                <Grid3X3 size={14} />
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                    <div className="hidden xl:flex bg-zinc-900 p-1 rounded-lg border border-white/5 gap-1 shrink-0 ml-2">
                                                         <button
                                                             onClick={() => setActiveTab('tasks')}
                                                             className={`px-3 py-1 rounded text-[10px] font-bold uppercase transition-colors ${activeTab === 'tasks' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
@@ -1433,6 +1490,19 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                                         Live Status
                                                                     </button>
                                                                 )}
+
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setIsConnectPhoneOpen(true);
+                                                                        setIsAppsMenuOpen(false);
+                                                                    }}
+                                                                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-zinc-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors group"
+                                                                >
+                                                                    <div className="w-5 h-5 rounded bg-indigo-500/10 flex items-center justify-center text-indigo-400 group-hover:bg-indigo-500 group-hover:text-white transition-colors">
+                                                                        <Grip size={12} />
+                                                                    </div>
+                                                                    Connect Phone
+                                                                </button>
                                                             </motion.div>
                                                         </>
                                                     )}
@@ -1440,7 +1510,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                             </div>
 
                                             {/* Sync Indicator */}
-                                            <div className="flex items-center gap-2 bg-black/20 border border-white/5 px-2.5 py-1 rounded-full group/sync transition-colors hover:border-emerald-500/30">
+                                            <div className="hidden md:flex items-center gap-2 bg-black/20 border border-white/5 px-2.5 py-1 rounded-full group/sync transition-colors hover:border-emerald-500/30">
                                                 <div className="relative flex items-center justify-center">
                                                     <RefreshCw
                                                         size={10}
@@ -1462,7 +1532,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                 </button>
                                             </div>
 
-                                            <div className="flex items-center gap-2 mr-2">
+                                            <div className="hidden md:flex items-center gap-2 mr-2">
                                                 <button
                                                     onClick={() => setIsMuted(!isMuted)}
                                                     className={`p-1.5 rounded-lg transition-colors border ${isMuted ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-zinc-800 border-white/5 text-zinc-400 hover:text-white'}`}
@@ -1472,7 +1542,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                 </button>
                                             </div>
 
-                                            <div className="flex items-center gap-2 mr-2">
+                                            <div className="hidden md:flex items-center gap-2 mr-2">
                                                 <button
                                                     onClick={() => playNotificationSound('task')}
                                                     className="p-1.5 rounded-lg transition-colors bg-zinc-800 border border-white/5 text-zinc-400 hover:text-white hover:bg-zinc-700"
@@ -1506,18 +1576,18 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
 
                                                     <button
                                                         onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                                                        className={`flex items-center gap-2 pl-2 pr-2 py-1 rounded-full transition-all border ${isUserMenuOpen
+                                                        className={`flex items-center md:gap-2 p-1 md:pl-2 md:pr-2 md:py-1 rounded-full transition-all border ${isUserMenuOpen
                                                             ? 'bg-zinc-700 border-white/20'
                                                             : 'bg-zinc-800 hover:bg-zinc-700 border-white/5'
                                                             }`}
                                                     >
-                                                        <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs font-bold border border-emerald-500/30">
+                                                        <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-xs font-bold border border-emerald-500/30 shrink-0">
                                                             {auth.user.fullName ? auth.user.fullName[0] : 'U'}
                                                         </div>
-                                                        <span className="text-xs font-bold text-zinc-300 group-hover:text-white max-w-[100px] truncate">
+                                                        <span className="hidden md:block text-xs font-bold text-zinc-300 group-hover:text-white max-w-[100px] truncate">
                                                             {auth.user.fullName || auth.user.email}
                                                         </span>
-                                                        <ChevronDown size={14} className={`text-zinc-500 transition-transform ${isUserMenuOpen ? 'rotate-180' : ''}`} />
+                                                        <ChevronDown size={14} className={`hidden md:block text-zinc-500 transition-transform ${isUserMenuOpen ? 'rotate-180' : ''}`} />
                                                     </button>
 
                                                     {/* Dropdown Menu */}
@@ -1988,7 +2058,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                         </AnimatePresence>
                                     )}
 
-                                    <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar">
+                                    <div className={`flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar ${isMobile && mobileTab === 'chat' ? 'hidden' : ''}`}>
                                         {(activeTab === 'stats' || mobileTab === 'stats') ? (
                                             <Stats tasks={tasks} />
                                         ) : activeTab === 'assets' ? (
@@ -2007,7 +2077,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                             // LIST VIEW IMPLEMENTATION (SECTIONED)
                                             <div className="w-full flex flex-col gap-6 pb-20 relative">
                                                 {/* Sticky List Header with Solid Background */}
-                                                <div className="grid grid-cols-12 gap-4 px-6 py-3 text-[10px] font-bold text-zinc-500 uppercase tracking-wider border-b border-white/5 bg-[#09090b] sticky top-0 z-40 shadow-sm">
+                                                <div className="hidden md:grid grid-cols-12 gap-4 px-6 py-3 text-[10px] font-bold text-zinc-500 uppercase tracking-wider border-b border-white/5 bg-[#09090b] sticky top-0 z-40 shadow-sm">
                                                     <div className="col-span-1">ID</div>
                                                     <div className="col-span-4">Job Title</div>
                                                     <div className="col-span-2">Department</div>
@@ -2075,8 +2145,15 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                                                     <Check size={12} strokeWidth={4} className={isSelected ? 'opacity-100' : 'opacity-0'} />
                                                                                 </div>
                                                                             </div>
+
+                                                                            {/* MOBILE: ID & Status Header */}
+                                                                            <div className="flex md:hidden items-center justify-between w-full mb-1 pl-8">
+                                                                                <span className="font-mono text-xs text-zinc-500 font-black">#{task.id}</span>
+                                                                                <span className={`text-[10px] font-bold uppercase ${task.status === 'todo' ? 'text-zinc-400' : task.status === 'in_progress' ? 'text-blue-400' : 'text-emerald-400'}`}>{task.status.replace('_', ' ')}</span>
+                                                                            </div>
+
                                                                             <div className="hidden md:block col-span-1 font-mono text-xs text-zinc-500 font-black pl-8 md:pl-8 group-hover:pl-8 transition-all tracking-tighter">#{task.id}</div>
-                                                                            <div className="col-span-12 md:col-span-4 flex items-center gap-3">
+                                                                            <div className="col-span-12 md:col-span-4 flex items-center gap-3 pl-8 md:pl-0">
                                                                                 {task.imageUrl && (
                                                                                     <div className="w-8 h-8 rounded bg-zinc-800 border border-white/10 overflow-hidden shrink-0">
                                                                                         <img src={task.imageUrl} className="w-full h-full object-cover" />
@@ -2092,12 +2169,25 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                                             <div className="hidden md:block col-span-2">
                                                                                 <span className="px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider text-zinc-900 border border-black/10" style={{ backgroundColor: groupColorHsl }}>{task.dept}</span>
                                                                             </div>
-                                                                            <div className="col-span-12 md:col-span-2 flex items-center gap-2">
+                                                                            <div className="col-span-12 md:col-span-2 flex items-center gap-2 pl-8 md:pl-0">
                                                                                 <div className="w-5 h-5 rounded-full bg-zinc-800 flex items-center justify-center text-[9px] font-bold text-zinc-400 border border-white/10" style={{ backgroundColor: task.owner === 'Unknown' ? '#27272a' : groupColorHsl }}>{task.owner ? task.owner[0] : '?'}</div>
                                                                                 <span className={`text-[10px] font-black truncate uppercase tracking-tight ${task.status === 'done' ? 'text-emerald-400' : 'text-zinc-300'}`}>
                                                                                     {task.status === 'done' ? `Done` : (task.owner === 'Unknown' ? 'Pool' : task.owner)}
                                                                                 </span>
                                                                             </div>
+
+                                                                            {/* MOBILE: Bottom Info (Dept + Timer) */}
+                                                                            <div className="flex md:hidden items-center justify-between w-full mt-2 pt-2 border-t border-white/5 pl-8">
+                                                                                <span className="px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider text-zinc-900 border border-black/10" style={{ backgroundColor: groupColorHsl }}>{task.dept}</span>
+                                                                                <TaskTimerWidget
+                                                                                    status={task.status}
+                                                                                    createdAt={task.createdAt}
+                                                                                    startedAt={task.startedAt}
+                                                                                    completedAt={task.completedAt}
+                                                                                    className="justify-end scale-90 origin-right"
+                                                                                />
+                                                                            </div>
+
                                                                             <div className="hidden md:block col-span-1">
                                                                                 <span className={`text-[10px] font-bold uppercase ${task.status === 'todo' ? 'text-zinc-400' : task.status === 'in_progress' ? 'text-blue-400' : 'text-emerald-400'}`}>{task.status.replace('_', ' ')}</span>
                                                                             </div>
@@ -2385,7 +2475,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                             animate={{ x: 0, opacity: 1 }}
                                                             exit={{ x: '100%', opacity: 0 }}
                                                             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                                                            className="w-[480px] border-l border-white/10 bg-zinc-950 absolute right-0 top-0 bottom-0 shadow-2xl z-[150] flex flex-col"
+                                                            className="w-full md:w-[480px] border-l border-white/10 bg-zinc-950 absolute right-0 top-0 bottom-0 shadow-2xl z-[150] flex flex-col"
                                                         >
                                                             {/* Header */}
                                                             <div className="h-16 border-b border-white/10 flex items-center justify-between px-6 bg-zinc-900 shrink-0 z-50 relative">
@@ -2434,7 +2524,13 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                                         {selectedTask.imageUrl && (
                                                                             <div
                                                                                 className="mb-6 rounded-xl overflow-hidden border border-white/10 group relative cursor-pointer"
-                                                                                onClick={() => setLightboxUrl(selectedTask.imageUrl || null)}
+                                                                                onClick={() => {
+                                                                                    if (isVideoFile(selectedTask.imageUrl || '')) {
+                                                                                        setIsVideoReviewOpen(true);
+                                                                                    } else {
+                                                                                        setLightboxUrl(selectedTask.imageUrl || null);
+                                                                                    }
+                                                                                }}
                                                                             >
                                                                                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
                                                                                     <div className="opacity-0 group-hover:opacity-100 transform scale-90 group-hover:scale-100 transition-all bg-black/60 text-white px-3 py-1.5 rounded-full text-xs font-bold backdrop-blur-sm border border-white/10 flex items-center gap-2">
@@ -2463,6 +2559,19 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                                                 })()}
                                                                             </p>
                                                                         </div>
+
+                                                                        {/* RESOLUTION NOTE DISPLAY */}
+                                                                        {selectedTask.resolutionNote && (
+                                                                            <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4 mb-6 relative overflow-hidden">
+                                                                                <div className="absolute top-0 left-0 w-[3px] h-full bg-emerald-500" />
+                                                                                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-500 block mb-2 flex items-center gap-2">
+                                                                                    <CheckCircle2 size={12} strokeWidth={3} /> Completion Note
+                                                                                </span>
+                                                                                <p className="text-zinc-200 text-sm whitespace-pre-wrap leading-relaxed italic pl-1">
+                                                                                    "{selectedTask.resolutionNote}"
+                                                                                </p>
+                                                                            </div>
+                                                                        )}
 
                                                                         <div className="grid grid-cols-2 gap-4 mb-6">
                                                                             <div className="bg-zinc-900/30 p-3 rounded-lg border border-white/5">
@@ -2723,50 +2832,17 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                         taskTitle={selectedTask?.title || "Unknown Task"}
                                     />
 
-                                    <LiveStatusModal
-                                        isOpen={isLiveStatusOpen}
-                                        onClose={() => setIsLiveStatusOpen(false)}
-                                        tasks={tasks}
-                                    />
 
-                                    {/* BOTTOM NAVIGATION (Mobile Only) */}
-                                    <div className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-zinc-950/90 backdrop-blur-md border-t border-white/10 shrink-0 flex items-center justify-around px-2 z-[60] pb-2">
-                                        <button
-                                            onClick={() => setMobileTab('tasks')}
-                                            className={`flex flex-col items-center justify-center p-2 rounded-lg transition-colors ${mobileTab === 'tasks' ? 'text-emerald-400' : 'text-zinc-500 hover:text-zinc-300'}`}
-                                        >
-                                            <List size={22} className={mobileTab === 'tasks' ? 'drop-shadow-[0_0_8px_rgba(52,211,153,0.5)]' : ''} />
-                                            <span className="text-[10px] font-bold mt-1">Tasks</span>
-                                        </button>
-                                        <button
-                                            onClick={() => setMobileTab('chat')}
-                                            className={`flex flex-col items-center justify-center p-2 rounded-lg transition-colors ${mobileTab === 'chat' ? 'text-indigo-400' : 'text-zinc-500 hover:text-zinc-300'}`}
-                                        >
-                                            <div className="relative">
-                                                <MessageSquare size={22} className={mobileTab === 'chat' ? 'drop-shadow-[0_0_8px_rgba(99,102,241,0.5)]' : ''} />
-                                                {Object.values(channelStats).reduce((a, b) => a + b.p1Count, 0) > 0 && (
-                                                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border border-zinc-900 animate-pulse" />
-                                                )}
-                                            </div>
-                                            <span className="text-[10px] font-bold mt-1">Chat</span>
-                                        </button>
-                                        <button
-                                            onClick={() => setMobileTab('stats')}
-                                            className={`flex flex-col items-center justify-center p-2 rounded-lg transition-colors ${mobileTab === 'stats' ? 'text-violet-400' : 'text-zinc-500 hover:text-zinc-300'}`}
-                                        >
-                                            <LayoutGrid size={22} className={mobileTab === 'stats' ? 'drop-shadow-[0_0_8px_rgba(139,92,246,0.5)]' : ''} />
-                                            <span className="text-[10px] font-bold mt-1">Stats</span>
-                                        </button>
-                                    </div>
-                                </motion.div >
+
+                                </motion.div>
                             )}
-                        </AnimatePresence >
-                    </div >
+                        </AnimatePresence>
+                    </div>
 
                     {/* CHAT PANEL (Desktop: Left of Dashboard | Mobile: Overlay) */}
                     < div className={`flex flex-col h-full bg-[#0b141a] transition-all duration-300 ease-in-out border-r border-white/5
                     ${chat.activeChannelId
-                            ? 'absolute inset-0 z-[60] w-full lg:static lg:order-first lg:w-[450px] lg:opacity-100 lg:translate-x-0'
+                            ? 'absolute inset-0 z-[70] w-full lg:static lg:order-first lg:w-[450px] lg:opacity-100 lg:translate-x-0 !pb-16 md:!pb-0'
                             : 'w-0 opacity-0 overflow-hidden border-r-0 lg:w-0'}
                 `}>
                         {
@@ -2775,6 +2851,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                     notificationStats={channelStats}
                                     pendingMessage={chatPendingMessage}
                                     isChatOnly={true} // Hides Sidebar
+                                    isMobileLayout={isMobile}
                                     onMessageConsumed={() => setChatPendingMessage(null)}
                                     onUnreadChange={(total, counts, mentions) => {
                                         setTotalUnread(total);
@@ -2938,6 +3015,139 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                 }}
                 taskTitle={tasks.find(t => t.id === quickAction?.taskId)?.title || ''}
             />
+
+            {/* Completion Modal */}
+            <CompletionModal
+                isOpen={isCompletionModalOpen}
+                onClose={() => setIsCompletionModalOpen(false)}
+                onConfirm={handleConfirmCompletion}
+                taskTitle={selectedTask?.title || ''}
+            />
+            {/* VIDEO REVIEW MODAL */}
+            <AnimatePresence>
+                {isVideoReviewOpen && selectedTask && selectedTask.imageUrl && (
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95 backdrop-blur-sm p-8"
+                    >
+                        <div className="w-full h-full max-w-[1600px] bg-black rounded-2xl overflow-hidden border border-white/10 shadow-2xl relative">
+                            <VideoReviewPanel
+                                task={selectedTask}
+                                videoUrl={selectedTask.imageUrl}
+                                onClose={() => setIsVideoReviewOpen(false)}
+                                onCommentAdded={(newComment) => {
+                                    // Optimistically update selectedTask comments
+                                    // Make sure comment matches the Comment interface we defined locally in VideoReviewPanel?
+                                    // JobTrackerApp Task interface has 'any[]' for comments so it's fine.
+                                    setSelectedTask(prev => prev ? ({
+                                        ...prev,
+                                        comments: [...(prev.comments || []), newComment]
+                                    }) : null);
+
+                                    setTasks(prev => prev.map(t => t.id === selectedTask.id ? ({
+                                        ...t,
+                                        comments: [...(t.comments || []), newComment],
+                                        commentCount: (t.commentCount || 0) + 1
+                                    }) : t));
+                                }}
+                            />
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+            {/* CONNECT PHONE MODAL */}
+            <AnimatePresence>
+                {isConnectPhoneOpen && (
+                    <div className="fixed inset-0 z-[250] flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 bg-black/80 backdrop-blur-sm"
+                            onClick={() => setIsConnectPhoneOpen(false)}
+                        />
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                            className="relative w-full max-w-sm bg-zinc-900 border border-white/10 rounded-2xl p-6 shadow-2xl flex flex-col items-center text-center"
+                        >
+                            <button
+                                onClick={() => setIsConnectPhoneOpen(false)}
+                                className="absolute top-4 right-4 p-2 text-zinc-500 hover:text-white transition-colors"
+                            >
+                                <X size={20} />
+                            </button>
+
+                            <div className="w-16 h-16 rounded-2xl bg-indigo-500/20 flex items-center justify-center text-indigo-400 mb-4">
+                                <Grip size={32} />
+                            </div>
+
+                            <h2 className="text-xl font-bold text-white mb-2">Connect Your Phone</h2>
+                            <p className="text-zinc-400 text-sm mb-6">
+                                Scan this QR code to access Job Tracker on your local network.
+                            </p>
+
+                            <div className="bg-white p-4 rounded-xl mb-6 shadow-[0_0_30px_rgba(79,70,229,0.3)]">
+                                <QRCodeSVG
+                                    value="http://192.168.1.101:3000"
+                                    size={200}
+                                    level="H"
+                                    includeMargin={false}
+                                />
+                            </div>
+
+                            <div className="w-full bg-black/40 rounded-lg p-3 text-left border border-white/5 mb-6">
+                                <p className="text-[10px] font-bold text-zinc-500 uppercase mb-1">Network URL</p>
+                                <code className="text-xs text-indigo-400 break-all">http://192.168.1.101:3000</code>
+                            </div>
+
+                            <div className="space-y-3 w-full">
+                                <div className="flex items-start gap-2 text-left">
+                                    <div className="w-5 h-5 rounded-full bg-zinc-800 flex items-center justify-center text-[10px] shrink-0 text-white">1</div>
+                                    <p className="text-xs text-zinc-400">Ensure your phone is on the **same Wi-Fi** network.</p>
+                                </div>
+                                <div className="flex items-start gap-2 text-left">
+                                    <div className="w-5 h-5 rounded-full bg-zinc-800 flex items-center justify-center text-[10px] shrink-0 text-white">2</div>
+                                    <p className="text-xs text-zinc-400">Scan code or type the URL manually.</p>
+                                </div>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* BOTTOM NAVIGATION (Mobile Only) - Moved to ROOT to stay visible always */}
+            <div className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-zinc-950/90 backdrop-blur-md border-t border-white/10 shrink-0 flex items-center justify-around px-2 z-[90] pb-2">
+                <button
+                    onClick={() => setMobileTab('tasks')}
+                    className={`flex flex-col items-center justify-center p-2 rounded-lg transition-colors ${mobileTab === 'tasks' ? 'text-emerald-400' : 'text-zinc-500 hover:text-zinc-300'}`}
+                >
+                    <List size={22} className={mobileTab === 'tasks' ? 'drop-shadow-[0_0_8px_rgba(52,211,153,0.5)]' : ''} />
+                    <span className="text-[10px] font-bold mt-1">Tasks</span>
+                </button>
+                <button
+                    onClick={() => setMobileTab('chat')}
+                    className={`flex flex-col items-center justify-center p-2 rounded-lg transition-colors ${mobileTab === 'chat' ? 'text-indigo-400' : 'text-zinc-500 hover:text-zinc-300'}`}
+                >
+                    <div className="relative">
+                        <MessageSquare size={22} className={mobileTab === 'chat' ? 'drop-shadow-[0_0_8px_rgba(99,102,241,0.5)]' : ''} />
+                        {Object.values(channelStats).reduce((a, b) => a + b.p1Count, 0) > 0 && (
+                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border border-zinc-900 animate-pulse" />
+                        )}
+                    </div>
+                    <span className="text-[10px] font-bold mt-1">Chat</span>
+                </button>
+                <button
+                    onClick={() => setMobileTab('stats')}
+                    className={`flex flex-col items-center justify-center p-2 rounded-lg transition-colors ${mobileTab === 'stats' ? 'text-violet-400' : 'text-zinc-500 hover:text-zinc-300'}`}
+                >
+                    <LayoutGrid size={22} className={mobileTab === 'stats' ? 'drop-shadow-[0_0_8px_rgba(139,92,246,0.5)]' : ''} />
+                    <span className="text-[10px] font-bold mt-1">Stats</span>
+                </button>
+            </div>
         </>
     );
 }
