@@ -1509,55 +1509,11 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                 </AnimatePresence>
                                             </div>
 
-                                            {/* Sync Indicator */}
-                                            <div className="hidden md:flex items-center gap-2 bg-black/20 border border-white/5 px-2.5 py-1 rounded-full group/sync transition-colors hover:border-emerald-500/30">
-                                                <div className="relative flex items-center justify-center">
-                                                    <RefreshCw
-                                                        size={10}
-                                                        className={`text-emerald-500 transition-all duration-700 ${lastSync && Date.now() - lastSync.getTime() < 1000 ? 'rotate-180 scale-125' : ''}`}
-                                                    />
-                                                    {lastSync && Date.now() - lastSync.getTime() < 1000 && (
-                                                        <div className="absolute inset-0 bg-emerald-500/40 blur-[4px] rounded-full animate-ping" />
-                                                    )}
-                                                </div>
-                                                <span className="text-[10px] font-mono font-bold text-zinc-500 group-hover/sync:text-emerald-400">
-                                                    SYNCED {lastSync ? Math.floor((Date.now() - lastSync.getTime()) / 1000) : 0}s AGO
-                                                </span>
-                                                <button
-                                                    onClick={() => loadTasks()}
-                                                    className="ml-1 text-zinc-600 hover:text-white transition-colors p-0.5 hover:bg-white/5 rounded"
-                                                    title="Force Refresh"
-                                                >
-                                                    <RefreshCw size={10} />
-                                                </button>
-                                            </div>
 
-                                            <div className="hidden md:flex items-center gap-2 mr-2">
-                                                <button
-                                                    onClick={() => setIsMuted(!isMuted)}
-                                                    className={`p-1.5 rounded-lg transition-colors border ${isMuted ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-zinc-800 border-white/5 text-zinc-400 hover:text-white'}`}
-                                                    title={isMuted ? "Unmute Sounds" : "Mute Sounds"}
-                                                >
-                                                    {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
-                                                </button>
-                                            </div>
 
-                                            <div className="hidden md:flex items-center gap-2 mr-2">
-                                                <button
-                                                    onClick={() => playNotificationSound('task')}
-                                                    className="p-1.5 rounded-lg transition-colors bg-zinc-800 border border-white/5 text-zinc-400 hover:text-white hover:bg-zinc-700"
-                                                    title="Test Sound"
-                                                >
-                                                    <Play size={14} />
-                                                </button>
-                                                <button
-                                                    onClick={() => setIsMuted(!isMuted)}
-                                                    className={`p-1.5 rounded-lg transition-colors border ${isMuted ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-zinc-800 border-white/5 text-zinc-400 hover:text-white'}`}
-                                                    title={isMuted ? "Unmute Sounds" : "Mute Sounds"}
-                                                >
-                                                    {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
-                                                </button>
-                                            </div>
+
+
+
 
                                             {/* Notification Center */}
                                             <div className="mr-2">
@@ -1568,11 +1524,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                             {/* Profile Badge & Dropdown */}
                                             {auth.user && (
                                                 <div className="relative profile-dropdown-container flex items-center">
-                                                    {/* Points Badge */}
-                                                    <div className="hidden md:flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 border border-amber-500/20 rounded-full mr-2" title="Total XP Earned">
-                                                        <div className="text-amber-500"><Sparkles size={12} fill="currentColor" /></div>
-                                                        <span className="text-xs font-bold text-amber-500 tabular-nums">{(auth.user.totalPoints || 0).toLocaleString()} XP</span>
-                                                    </div>
+
 
                                                     <button
                                                         onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
