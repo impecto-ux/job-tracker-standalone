@@ -1,0 +1,98 @@
+{
+    "regions": {
+        "Taksim": {
+            "priceMultiplier": 1.0,
+            "demandMultiplier": 1.0,
+            "rentMultiplier": 1.0,
+            "buyMultiplier": 1.0
+        },
+        "Sultanahmet": {
+            "priceMultiplier": 0.95,
+            "demandMultiplier": 1.05,
+            "rentMultiplier": 1.05,
+            "buyMultiplier": 1.05
+        },
+        "Besiktas": {
+            "priceMultiplier": 1.1,
+            "demandMultiplier": 0.95,
+            "rentMultiplier": 1.15,
+            "buyMultiplier": 1.15
+        }
+    },
+    "segments": [
+        {
+            "name": "Hostel",
+            "baseADR": 1200,
+            "baseOccupancy": 55,
+            "roomCount": 20,
+            "rentPerRoom": 8000,
+            "buyPerRoom": 1200000
+        },
+        {
+            "name": "Apart",
+            "baseADR": 1700,
+            "baseOccupancy": 60,
+            "roomCount": 15,
+            "rentPerRoom": 11000,
+            "buyPerRoom": 1500000
+        },
+        {
+            "name": "Butik",
+            "baseADR": 2300,
+            "baseOccupancy": 58,
+            "roomCount": 12,
+            "rentPerRoom": 14000,
+            "buyPerRoom": 1800000
+        },
+        {
+            "name": "3 Yıldızlı",
+            "baseADR": 2700,
+            "baseOccupancy": 62,
+            "roomCount": 40,
+            "rentPerRoom": 18000,
+            "buyPerRoom": 2400000
+        },
+        {
+            "name": "4 Yıldızlı",
+            "baseADR": 3600,
+            "baseOccupancy": 65,
+            "roomCount": 60,
+            "rentPerRoom": 26000,
+            "buyPerRoom": 3400000
+        },
+        {
+            "name": "5 Yıldızlı",
+            "baseADR": 8500,
+            "baseOccupancy": 68,
+            "roomCount": 100,
+            "rentPerRoom": 55000,
+            "buyPerRoom": 6500000
+        }
+    ],
+    "renovations": [
+        {
+            "type": "Light",
+            "turnsToComplete": 1,
+            "costPercent": 0.03,
+            "adrBonus": 0.05,
+            "demandBonus": 0.02,
+            "maintenanceBonus": 0.0
+        },
+        {
+            "type": "Medium",
+            "turnsToComplete": 2,
+            "costPercent": 0.07,
+            "adrBonus": 0.12,
+            "demandBonus": 0.05,
+            "maintenanceBonus": 0.0
+        },
+        {
+            "type": "Heavy",
+            "turnsToComplete": 4,
+            "costPercent": 0.15,
+            "adrBonus": 0.25,
+            "demandBonus": 0.10,
+            "maintenanceBonus": -0.10
+        }
+    ]
+}
