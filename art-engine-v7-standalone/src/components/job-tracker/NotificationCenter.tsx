@@ -18,7 +18,7 @@ export const NotificationCenter = () => {
     const fetchNotifications = async () => {
         if (!auth.user) return;
         try {
-            const res = await api.get('/notifications');
+            const res = await api.get('/user-notifications');
             if (Array.isArray(res.data)) {
                 setNotifications(res.data);
             } else {
@@ -26,7 +26,7 @@ export const NotificationCenter = () => {
                 setNotifications([]);
             }
 
-            const countRes = await api.get('/notifications/unread-count');
+            const countRes = await api.get('/user-notifications/unread-count');
             setUnreadCount(countRes.data || 0);
         } catch (err) {
             console.error('Failed to fetch notifications', err);
@@ -35,7 +35,7 @@ export const NotificationCenter = () => {
 
     const handleMarkAsRead = async (id: number) => {
         try {
-            await api.patch(`/notifications/${id}/read`);
+            await api.patch(`/user-notifications/${id}/read`);
             setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
             setUnreadCount(prev => Math.max(0, prev - 1));
         } catch (err) {
@@ -45,7 +45,7 @@ export const NotificationCenter = () => {
 
     const handleMarkAllRead = async () => {
         try {
-            await api.post(`/notifications/mark-all-read`);
+            await api.post(`/user-notifications/mark-all-read`);
             setNotifications(prev => prev.map(n => ({ ...n, read: true })));
             setUnreadCount(0);
         } catch (err) {

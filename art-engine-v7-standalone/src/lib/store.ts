@@ -99,7 +99,13 @@ interface AppState {
     // Chat
     chat: ChatState;
 
+    // UI State
+    viewMode: 'list' | 'board' | 'tree';
+    setViewMode: (mode: 'list' | 'board' | 'tree') => void;
+
     // Actions
+    setTheme: (theme: string) => void;
+    theme: string;
     updateAgentStatus: (id: string, status: Agent['status']) => void;
     addMessage: (msg: Omit<Message, 'id' | 'timestamp'>) => void;
     setActiveAgent: (id: string) => void;
@@ -125,6 +131,10 @@ export const useStore = create<AppState>()(
             activeAgentId: DEFAULT_AGENTS[0].id,
             sessionId: null,
             pendingAttachments: [],
+            viewMode: 'list',
+            setViewMode: (mode) => set({ viewMode: mode }),
+            theme: 'echo',
+            setTheme: (theme) => set({ theme }),
 
             memory: {
                 activeVibe: null,
@@ -274,7 +284,8 @@ export const useStore = create<AppState>()(
                 chat: {
                     ...state.chat,
                     messages: {} // Don't persist Job Tracker chat history
-                }
+                },
+                theme: state.theme, // Persist theme
             }),
             merge: (persistedState: any, currentState) => ({
                 ...currentState,

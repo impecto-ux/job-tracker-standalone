@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Plus, Filter, MessageSquare, CheckCircle, CheckCircle2, Check, Clock, AlertCircle, ArrowLeft, Send, RefreshCw, Play, AlertOctagon, XCircle, Trash2, User, Sparkles, X, ChevronDown, LogOut, Settings, LayoutGrid, List, MoreHorizontal, Grid3X3, Columns, Layout, Menu, PanelLeftClose, Minimize2, Maximize2, Zap, Shield, Users, Lock, Activity, RotateCcw, Layers, Grip, Volume2, VolumeX } from 'lucide-react';
+import { Search, Plus, Filter, MessageSquare, CheckCircle, CheckCircle2, Check, Clock, AlertCircle, ArrowLeft, Send, RefreshCw, Play, AlertOctagon, XCircle, Trash2, User, Sparkles, X, ChevronDown, LogOut, Settings, LayoutGrid, List, ListTodo, MoreHorizontal, Grid3X3, Columns, Layout, Menu, PanelLeftClose, Minimize2, Maximize2, Zap, Shield, Users, Lock, Activity, RotateCcw, Layers, Grip, Volume2, VolumeX, GitBranch } from 'lucide-react';
 import { io } from 'socket.io-client';
 import { getSocketUrl } from '@/lib/config';
 import { useStore } from '@/lib/store'; // Added import
@@ -17,6 +17,9 @@ import { UserManagementPanel } from '@/components/job-tracker/UserManagementPane
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api'; // Added api import
+import { BlueprintModal } from '@/components/job-tracker/BlueprintModal'; // NEW
+
+// Force rebuild 2
 
 // Components
 import Stats from '@/components/job-tracker/Stats';
@@ -173,6 +176,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
     // Mobile State
     const [mobileTab, setMobileTab] = useState<'tasks' | 'chat' | 'stats'>('tasks');
     const [isMobile, setIsMobile] = useState(false);
+    const [isFocusMode, setIsFocusMode] = useState(false); // Focus Mode State
 
     useEffect(() => {
         const checkMobile = () => setIsMobile(window.innerWidth < 768);
@@ -367,6 +371,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
 
     // View State
     const [viewMode, setViewMode] = useState<'list' | 'board' | 'grid'>('list');
+    const [isBlueprintOpen, setIsBlueprintOpen] = useState(false); // NEW
     const [activeTab, setActiveTab] = useState<'my_tasks' | 'squad_tasks' | 'all_tasks' | 'stats' | 'assets' | 'admin' | 'tasks'>('my_tasks');
     const [archiveDate, setArchiveDate] = useState<Date>(new Date());
     const [lastSelectedId, setLastSelectedId] = useState<number | null>(null);
@@ -507,20 +512,22 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
 
         if (!confirm(confirmMsg)) return;
 
+        // Optimistic Update
+        const previousTasks = [...tasks];
+        setTasks(prev => prev.map(t => authorizedIds.includes(t.id) ? { ...t, status } : t));
+        setIsSelectionMode(false);
+        setSelectedTaskIds(new Set());
+
         try {
             await Promise.all(authorizedIds.map(id => api.patch(`/tasks/${id}`, { status })));
-
-            // Cleanup
-            setIsSelectionMode(false);
-            setSelectedTaskIds(new Set());
-            loadTasks();
 
             if (unauthorizedIds.length > 0) {
                 alert(`Successfully updated ${authorizedIds.length} tasks.\n${unauthorizedIds.length} tasks were skipped due to permission restrictions.`);
             }
         } catch (error) {
             console.error("Failed to update tasks", error);
-            alert("Some tasks could not be updated.");
+            alert("Some tasks could not be updated. Reverting changes.");
+            setTasks(previousTasks); // Revert on failure
         }
     };
 
@@ -1218,7 +1225,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                 {/* Expanded UI (Always Mounted, Hidden When Collapsed) */}
                 <div
                     style={{ width: isMobile ? '100%' : `${sidebarWidth}px` }}
-                    className={`flex-shrink-0 h-full relative ${(!isMobile && isChatCollapsed) || (isMobile && (mobileTab !== 'chat' || !!chat.activeChannelId)) ? 'hidden' : 'flex'}`}
+                    className={`flex-shrink-0 h-full relative ${isFocusMode || (!isMobile && isChatCollapsed) || (isMobile && (mobileTab !== 'chat' || !!chat.activeChannelId)) ? 'hidden' : 'flex'}`}
                 >
                     <ChatSidebar
                         notificationStats={channelStats}
@@ -1308,113 +1315,138 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                     {(!isMobile || mobileTab === 'tasks') && (
                                         <div className="h-16 border-b border-white/5 flex items-center justify-between px-4 md:px-6 bg-zinc-900/50 shrink-0 backdrop-blur-sm z-[100]">
                                             {/* ... content ... */}
-                                            <div className="flex items-center gap-4 flex-1 min-w-0 mr-4">
+                                            <div className="flex items-center gap-2 flex-1 min-w-0 mr-2">
                                                 <h1 className="text-lg font-bold text-white tracking-tight flex items-center gap-2 shrink-0">
                                                     <span className="text-emerald-500">❖</span>
-                                                    <span className="hidden md:inline">JOB TRACKER</span>
+                                                    <span className="hidden 2xl:inline">JOB TRACKER</span>
                                                 </h1>
-                                                <div className="h-4 w-px bg-white/10 shrink-0" />
+                                                <div className="h-4 w-px bg-white/10 shrink-0 hidden 2xl:block" />
 
-                                                <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 -mb-1 pr-2 w-full mask-linear-fade">
-                                                    {/* Status Filter */}
-                                                    <div className="flex gap-1 bg-zinc-900 p-1 rounded-lg border border-white/5 shrink-0">
-                                                        {['all', 'todo', 'in_progress', 'done'].map(status => (
-                                                            <button
-                                                                key={status}
-                                                                onClick={() => setFilterStatus(status)}
-                                                                className={`px-3 py-1 rounded-md text-xs font-bold capitalize transition-colors whitespace-nowrap ${filterStatus === status ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                                                <div className="flex items-center gap-2 flex-nowrap min-w-0 overflow-hidden">
+                                                    {/* SEGMENT: FILTERS */}
+                                                    <div className="flex items-center gap-2 bg-zinc-900/50 p-1 rounded-lg border border-white/5">
+                                                        {/* Status Filter */}
+                                                        <div className="relative group">
+                                                            <div className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none z-10 text-zinc-500">
+                                                                <ListTodo size={14} />
+                                                            </div>
+                                                            <select
+                                                                value={filterStatus}
+                                                                onChange={(e) => setFilterStatus(e.target.value)}
+                                                                className="bg-zinc-900 border border-white/5 rounded-md pl-8 pr-6 py-1.5 text-xs font-bold text-zinc-300 focus:outline-none focus:ring-1 focus:ring-emerald-500 appearance-none hover:bg-zinc-800 cursor-pointer uppercase min-w-[100px]"
                                                             >
-                                                                {status.replace('_', ' ')}
-                                                            </button>
-                                                        ))}
+                                                                <option value="all">All Status</option>
+                                                                <option value="todo">To Do</option>
+                                                                <option value="in_progress">In Progress</option>
+                                                                <option value="done">Done</option>
+                                                            </select>
+                                                            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none z-10 text-zinc-500">
+                                                                <ChevronDown size={12} />
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="w-px h-4 bg-white/5" />
+
+                                                        {/* Department Filter */}
+                                                        <div className="relative group">
+                                                            <div className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none z-10 text-zinc-500">
+                                                                <Filter size={14} />
+                                                            </div>
+                                                            <select
+                                                                value={filterDept}
+                                                                onChange={(e) => setFilterDept(e.target.value)}
+                                                                className="bg-zinc-900 border border-white/5 rounded-md pl-8 pr-6 py-1.5 text-xs font-bold text-zinc-300 focus:outline-none focus:ring-1 focus:ring-emerald-500 appearance-none hover:bg-zinc-800 cursor-pointer uppercase min-w-[100px] max-w-[150px]"
+                                                            >
+                                                                <option value="all">All Groups</option>
+                                                                {departments.map((dept: string) => (
+                                                                    <option key={dept} value={dept}>{dept.toUpperCase()}</option>
+                                                                ))}
+                                                            </select>
+                                                            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none z-10 text-zinc-500">
+                                                                <ChevronDown size={12} />
+                                                            </div>
+                                                        </div>
                                                     </div>
 
-                                                    {/* NEW: Department Filter */}
-                                                    <div className="hidden lg:block relative group min-w-[180px] shrink-0">
-                                                        <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10 text-zinc-500">
-                                                            <Filter size={14} />
-                                                        </div>
-                                                        <select
-                                                            value={filterDept}
-                                                            onChange={(e) => setFilterDept(e.target.value)}
-                                                            className="w-full bg-zinc-900 border border-white/5 rounded-lg pl-9 pr-8 py-1.5 text-xs font-bold text-zinc-300 focus:outline-none focus:ring-1 focus:ring-emerald-500 appearance-none hover:bg-zinc-800 cursor-pointer relative z-0"
-                                                        >
-                                                            <option value="all">ALL GROUPS</option>
-                                                            {departments.map((dept: string) => (
-                                                                <option key={dept} value={dept}>{dept.toUpperCase()}</option>
+                                                    {/* SEGMENT: VIEW CONTROLS & NAVIGATION */}
+                                                    <div className="flex items-center gap-2 bg-zinc-900/50 p-1 rounded-lg border border-white/5 ml-auto shrink-0">
+
+                                                        {/* Navigation Tabs (Merged) */}
+                                                        <div className="hidden xl:flex items-center bg-zinc-900 rounded-md border border-white/5 p-0.5 mr-2">
+                                                            {['tasks', 'stats', 'assets'].map(tab => (
+                                                                <button
+                                                                    key={tab}
+                                                                    onClick={() => setActiveTab(tab as any)}
+                                                                    className={`px-3 py-1 rounded-sm text-[10px] font-bold uppercase transition-all ${activeTab === tab ? 'bg-zinc-700 text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-300'}`}
+                                                                >
+                                                                    {tab}
+                                                                </button>
                                                             ))}
-                                                        </select>
-                                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none z-10 text-zinc-500">
-                                                            <ChevronDown size={12} />
                                                         </div>
-                                                    </div>
 
-                                                    {/* NEW: Sort By (Hidden on lg/xl) */}
-                                                    <div className="hidden 2xl:flex bg-zinc-900 p-1 rounded-lg border border-white/5 gap-1 shrink-0">
+                                                        {/* Blueprint Trigger */}
                                                         <button
-                                                            onClick={() => setSortBy('priority')}
-                                                            className={`px-2 py-1 rounded text-[10px] font-bold uppercase transition-colors ${sortBy === 'priority' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                                                            onClick={() => setIsBlueprintOpen(true)}
+                                                            className="hidden xl:flex items-center gap-1 px-3 py-1.5 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 hover:text-indigo-300 rounded-md border border-indigo-500/20 transition-colors mr-2 text-[10px] font-bold uppercase tracking-wider"
                                                         >
-                                                            Priority
+                                                            <GitBranch size={12} />
+                                                            Blueprint
                                                         </button>
-                                                        <button
-                                                            onClick={() => setSortBy('group')}
-                                                            className={`px-2 py-1 rounded text-[10px] font-bold uppercase transition-colors ${sortBy === 'group' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
-                                                        >
-                                                            Group
-                                                        </button>
-                                                        <button
-                                                            onClick={() => setSortBy('newest')}
-                                                            className={`px-2 py-1 rounded text-[10px] font-bold uppercase transition-colors ${sortBy === 'newest' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
-                                                        >
-                                                            Newest
-                                                        </button>
-                                                    </div>
 
-                                                    {/* NEW: View Mode Toggle (Hidden on lg/xl/mobile) - Forced to List on Mobile */}
-                                                    {!isMobile && (
-                                                        <div className="hidden 2xl:flex bg-zinc-900 p-1 rounded-lg border border-white/5 gap-1 shrink-0">
-                                                            <button
-                                                                onClick={() => setViewMode('board')}
-                                                                className={`p-1.5 rounded transition-colors ${viewMode === 'board' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
-                                                                title="Board View"
+                                                        <div className="hidden xl:block w-px h-4 bg-white/5 mr-2" />
+
+                                                        {/* Sort Dropdown */}
+                                                        <div className="relative group hidden 2xl:block">
+                                                            <select
+                                                                value={sortBy}
+                                                                onChange={(e) => setSortBy(e.target.value as any)}
+                                                                className="bg-zinc-900 border border-white/5 rounded-md pl-2 pr-6 py-1 text-[10px] font-bold text-zinc-300 focus:outline-none focus:ring-1 focus:ring-emerald-500 appearance-none hover:bg-zinc-800 cursor-pointer uppercase min-w-[70px]"
                                                             >
-                                                                <Columns size={14} />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => setViewMode('list')}
-                                                                className={`p-1.5 rounded transition-colors ${viewMode === 'list' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
-                                                                title="List View"
-                                                            >
-                                                                <List size={14} />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => setViewMode('grid')}
-                                                                className={`p-1.5 rounded transition-colors ${viewMode === 'grid' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
-                                                                title="Gallery View"
-                                                            >
-                                                                <Grid3X3 size={14} />
-                                                            </button>
+                                                                <option value="newest">Newest</option>
+                                                                <option value="priority">Priority</option>
+                                                                <option value="group">Group</option>
+                                                            </select>
+                                                            <div className="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none z-10 text-zinc-500">
+                                                                <ChevronDown size={10} />
+                                                            </div>
                                                         </div>
-                                                    )}
-                                                    <div className="hidden xl:flex bg-zinc-900 p-1 rounded-lg border border-white/5 gap-1 shrink-0 ml-2">
+
+                                                        {/* View Mode Toggle */}
+                                                        {!isMobile && (
+                                                            <div className="flex items-center bg-zinc-900 rounded-md border border-white/5 p-0.5">
+                                                                <button
+                                                                    onClick={() => setViewMode('board')}
+                                                                    className={`p-1 rounded text-zinc-400 hover:text-white transition-colors ${viewMode === 'board' ? 'bg-zinc-700 text-white shadow-sm' : ''}`}
+                                                                    title="Board View"
+                                                                >
+                                                                    <Columns size={12} />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => setViewMode('list')}
+                                                                    className={`p-1 rounded text-zinc-400 hover:text-white transition-colors ${viewMode === 'list' ? 'bg-zinc-700 text-white shadow-sm' : ''}`}
+                                                                    title="List View"
+                                                                >
+                                                                    <List size={12} />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => setViewMode('grid')}
+                                                                    className={`p-1 rounded text-zinc-400 hover:text-white transition-colors ${viewMode === 'grid' ? 'bg-zinc-700 text-white shadow-sm' : ''}`}
+                                                                    title="Gallery View"
+                                                                >
+                                                                    <Grid3X3 size={12} />
+                                                                </button>
+                                                            </div>
+                                                        )}
+
+                                                        <div className="w-px h-4 bg-white/5 mx-1" />
+
+                                                        {/* Focus Toggle */}
                                                         <button
-                                                            onClick={() => setActiveTab('tasks')}
-                                                            className={`px-3 py-1 rounded text-[10px] font-bold uppercase transition-colors ${activeTab === 'tasks' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+                                                            onClick={() => setIsFocusMode(!isFocusMode)}
+                                                            className={`p-1.5 rounded-md transition-all ${isFocusMode ? 'bg-indigo-500/20 text-indigo-400 ring-1 ring-indigo-500/50' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
+                                                            title="Toggle Focus Mode"
                                                         >
-                                                            Tasks
-                                                        </button>
-                                                        <button
-                                                            onClick={() => setActiveTab('stats')}
-                                                            className={`px-3 py-1 rounded text-[10px] font-bold uppercase transition-colors ${activeTab === 'stats' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
-                                                        >
-                                                            Stats
-                                                        </button>
-                                                        <button
-                                                            onClick={() => setActiveTab('assets')}
-                                                            className={`px-3 py-1 rounded text-[10px] font-bold uppercase transition-colors ${activeTab === 'assets' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
-                                                        >
-                                                            Assets
+                                                            {isFocusMode ? <Maximize2 size={14} /> : <Minimize2 size={14} />}
                                                         </button>
                                                     </div>
                                                 </div>
@@ -1562,6 +1594,11 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                                                         <p className="text-[10px] text-zinc-500 truncate">{auth.user.email}</p>
                                                                     </div>
 
+                                                                    <div className="p-2 border-b border-white/5">
+                                                                        <p className="text-[10px] font-bold text-zinc-500 uppercase mb-2 px-1">Theme</p>
+                                                                        <ThemeSelector />
+                                                                    </div>
+
                                                                     <div className="p-1">
                                                                         <button
                                                                             onClick={() => {
@@ -1699,7 +1736,7 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                                     )}
 
                                     {/* INFOGRAPHIC HEADER: Live Operations Center */}
-                                    {(!isMobile || mobileTab === 'stats') && (
+                                    {(!isMobile || mobileTab === 'stats') && !isFocusMode && (
                                         <div className="h-52 border-b border-white/10 p-4 flex gap-4 bg-zinc-900/30 shrink-0">
                                             {/* 1. Completed Today (Daily Velocity) */}
                                             <div className="w-56 bg-zinc-900/50 rounded-2xl border border-white/5 p-4 flex flex-col relative overflow-hidden group">
@@ -3100,6 +3137,16 @@ export default function JobTrackerApp({ onExit }: JobTrackerProps) {
                     <span className="text-[10px] font-bold mt-1">Stats</span>
                 </button>
             </div>
+            {/* Blueprint Modal */}
+            <BlueprintModal
+                isOpen={isBlueprintOpen}
+                onClose={() => setIsBlueprintOpen(false)}
+                tasks={filteredTasks}
+                onTaskClick={(task) => {
+                    setSelectedTask(task);
+                    // Optional: Close blueprint? setIsBlueprintOpen(false);
+                }}
+            />
         </>
     );
 }

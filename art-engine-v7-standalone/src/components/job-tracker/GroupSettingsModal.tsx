@@ -447,57 +447,69 @@ export default function GroupSettingsModal({ isOpen, onClose, channelId, stats }
                                             {/* Members List */}
                                             {activeSection === 'members' && (
                                                 <section className="space-y-4">
-                                                    <div className="flex items-center justify-between px-2">
-                                                        <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs uppercase tracking-widest">
-                                                            <Users size={14} />
-                                                            <span>Members ({groupDetails.users.length})</span>
+                                                    <div className="space-y-4 mb-6">
+                                                        {/* Row 1: Title & Stats */}
+                                                        <div className="flex items-center justify-between px-1">
+                                                            <div>
+                                                                <h3 className="text-white font-bold text-lg">Team Members</h3>
+                                                                <p className="text-xs text-zinc-500">{groupDetails.users.length} Active Users</p>
+                                                            </div>
                                                         </div>
-                                                        <div className="flex items-center gap-2 bg-[#111b21] p-1 rounded-lg border border-white/5">
-                                                            <button
-                                                                onClick={() => setSortMode('alphabetical')}
-                                                                className={`px-2 py-1 rounded text-[9px] font-bold uppercase tracking-wider transition-all ${sortMode === 'alphabetical' ? 'bg-emerald-500 text-[#111b21]' : 'text-zinc-500 hover:text-zinc-300'}`}
-                                                            >
-                                                                A-Z
-                                                            </button>
-                                                            <button
-                                                                onClick={() => setSortMode('department')}
-                                                                className={`px-2 py-1 rounded text-[9px] font-bold uppercase tracking-wider transition-all ${sortMode === 'department' ? 'bg-emerald-500 text-[#111b21]' : 'text-zinc-500 hover:text-zinc-300'}`}
-                                                            >
-                                                                By Dept
-                                                            </button>
+
+                                                        {/* Row 2: Action Toolbar */}
+                                                        <div className="flex items-center justify-between gap-4">
+                                                            {/* Sort Segmented Control */}
+                                                            <div className="flex bg-[#111b21] p-1 rounded-lg border border-white/5">
+                                                                <button
+                                                                    onClick={() => setSortMode('alphabetical')}
+                                                                    className={`px-4 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all ${sortMode === 'alphabetical' ? 'bg-zinc-700 text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-300'}`}
+                                                                >
+                                                                    A-Z
+                                                                </button>
+                                                                <div className="w-px h-4 bg-white/5 my-auto mx-1" />
+                                                                <button
+                                                                    onClick={() => setSortMode('department')}
+                                                                    className={`px-4 py-1.5 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all ${sortMode === 'department' ? 'bg-zinc-700 text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-300'}`}
+                                                                >
+                                                                    Dep
+                                                                </button>
+                                                            </div>
+
+                                                            {/* Actions */}
+                                                            <div className="flex items-center gap-2">
+                                                                {canManage && (
+                                                                    <button
+                                                                        onClick={() => setShowAddMember(true)}
+                                                                        className="flex items-center gap-2 text-xs font-bold text-emerald-950 bg-emerald-500 hover:bg-emerald-400 px-4 py-2 rounded-lg transition-all shadow-lg hover:shadow-emerald-500/20 active:scale-95"
+                                                                    >
+                                                                        <UserPlus size={16} strokeWidth={2.5} />
+                                                                        <span>Add Member</span>
+                                                                    </button>
+                                                                )}
+
+                                                                <button
+                                                                    onClick={async () => {
+                                                                        if (!confirm(`Are you sure you want to leave "${groupDetails.name}"?`)) return;
+                                                                        try {
+                                                                            await api.delete(`/groups/${groupDetails.id}/members/${auth.user!.id}`);
+                                                                            onClose();
+                                                                            const channelsRes = await api.get('/channels');
+                                                                            useStore.getState().chat.setChannels(channelsRes.data);
+                                                                            if (useStore.getState().chat.activeChannelId === channelId) {
+                                                                                useStore.getState().chat.setActiveChannel(null);
+                                                                            }
+                                                                        } catch (e) {
+                                                                            console.error("Failed to leave group", e);
+                                                                            alert("Failed to leave group.");
+                                                                        }
+                                                                    }}
+                                                                    className="p-2 text-rose-500 hover:text-white hover:bg-rose-500/10 rounded-lg transition-all active:scale-95 border border-transparent hover:border-rose-500/20"
+                                                                    title="Leave Group"
+                                                                >
+                                                                    <LogOut size={18} />
+                                                                </button>
+                                                            </div>
                                                         </div>
-                                                        {canManage && (
-                                                            <button
-                                                                onClick={() => setShowAddMember(true)}
-                                                                className="flex items-center gap-1.5 text-xs font-bold text-emerald-500 hover:text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-lg border border-emerald-500/20 transition-all hover:scale-105"
-                                                            >
-                                                                <UserPlus size={16} />
-                                                                Add
-                                                            </button>
-                                                        )}
-                                                        <button
-                                                            onClick={async () => {
-                                                                if (!confirm(`Are you sure you want to leave "${groupDetails.name}"?`)) return;
-                                                                try {
-                                                                    await api.delete(`/groups/${groupDetails.id}/members/${auth.user!.id}`);
-                                                                    onClose();
-                                                                    // Refresh channels list without full page reload
-                                                                    const channelsRes = await api.get('/channels');
-                                                                    useStore.getState().chat.setChannels(channelsRes.data);
-                                                                    // Reset active channel if we just left it
-                                                                    if (useStore.getState().chat.activeChannelId === channelId) {
-                                                                        useStore.getState().chat.setActiveChannel(null);
-                                                                    }
-                                                                } catch (e) {
-                                                                    console.error("Failed to leave group", e);
-                                                                    alert("Failed to leave group.");
-                                                                }
-                                                            }}
-                                                            className="flex items-center gap-1.5 text-xs font-bold text-rose-500 hover:text-rose-400 bg-rose-500/10 px-3 py-1.5 rounded-lg border border-rose-500/20 transition-all hover:scale-105"
-                                                        >
-                                                            <LogOut size={16} />
-                                                            Leave Group
-                                                        </button>
                                                     </div>
 
                                                     <div className="grid grid-cols-1 gap-2">

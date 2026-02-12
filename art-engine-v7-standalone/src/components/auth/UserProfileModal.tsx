@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, User, Save, Lock, Phone, Briefcase, UserCircle } from 'lucide-react';
 import api from '@/lib/api';
+import { ThemeSelector } from '@/components/ThemeSelector';
 
 interface UserProfileModalProps {
     isOpen: boolean;
@@ -60,7 +61,7 @@ export default function UserProfileModal({ isOpen, onClose, currentUser, onUpdat
                 initial={{ scale: 0.9, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.9, opacity: 0 }}
-                className="bg-[#18181b] border border-white/10 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl"
+                className="bg-zinc-900 border border-white/10 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl"
             >
                 {/* Header */}
                 <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between bg-zinc-900/50">
@@ -93,13 +94,19 @@ export default function UserProfileModal({ isOpen, onClose, currentUser, onUpdat
                         <span className="text-zinc-300 text-xs font-bold">{currentUser.department?.name || 'Unassigned'}</span>
                     </div>
 
+                    {/* Appearance */}
+                    <div className="space-y-2 pb-4 border-b border-white/5">
+                        <label className="text-xs font-bold text-zinc-500 uppercase flex items-center gap-2">Appearance</label>
+                        <ThemeSelector />
+                    </div>
+
                     <div className="space-y-1">
                         <label className="text-xs font-bold text-zinc-500 uppercase flex items-center gap-2"><User size={12} /> Full Name</label>
                         <input
                             type="text"
                             value={fullName}
                             onChange={(e) => setFullName(e.target.value)}
-                            className="w-full bg-black border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500/50 transition-colors"
+                            className="w-full bg-zinc-950 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500/50 transition-colors"
                         />
                     </div>
 
@@ -110,7 +117,7 @@ export default function UserProfileModal({ isOpen, onClose, currentUser, onUpdat
                             value={whatsappNumber}
                             onChange={(e) => setWhatsappNumber(e.target.value)}
                             placeholder="+1234567890"
-                            className="w-full bg-black border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500/50 transition-colors"
+                            className="w-full bg-zinc-950 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500/50 transition-colors"
                         />
                     </div>
 
@@ -121,7 +128,7 @@ export default function UserProfileModal({ isOpen, onClose, currentUser, onUpdat
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             placeholder="Leave blank to keep current"
-                            className="w-full bg-black border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500/50 transition-colors"
+                            className="w-full bg-zinc-950 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500/50 transition-colors"
                         />
                     </div>
                 </div>

@@ -176,7 +176,13 @@ export default function MyRequestsModal({ isOpen, onClose, isEmbedded = false, o
                                         <div className="mt-2 text-[10px] text-zinc-500 flex items-center gap-2">
                                             <span>Dept: {task.department?.name || 'General'}</span>
                                             <span>•</span>
-                                            <span className="capitalize text-zinc-400">{task.status.replace('_', ' ')}</span>
+                                            <span className={`capitalize px-1.5 py-0.5 rounded font-bold ${task.status === 'done' ? 'bg-emerald-500/10 text-emerald-500' :
+                                                    task.status === 'in_progress' ? 'bg-blue-500/10 text-blue-500' :
+                                                        task.status === 'blocked' ? 'bg-red-500/10 text-red-500' :
+                                                            'bg-zinc-500/10 text-zinc-500'
+                                                }`}>
+                                                {task.status.replace('_', ' ')}
+                                            </span>
                                             {onNavigateToTask && (
                                                 <>
                                                     <span>•</span>

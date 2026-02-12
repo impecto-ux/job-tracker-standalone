@@ -11,7 +11,7 @@ const JobTrackerApp = dynamic(() => import('@/apps/JobTrackerApp'), {
 
 export default function Home() {
   return (
-    <main className="h-screen w-screen bg-black overflow-hidden font-sans">
+    <main className="h-screen w-screen bg-zinc-950 overflow-hidden font-sans">
       <JobTrackerApp onExit={() => { }} />
     </main>
   );

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Outfit, Montserrat, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import { ThemeInitializer } from "@/components/ThemeInitializer";
 
 const outfit = Outfit({
   variable: "--font-outfit",
@@ -40,6 +41,7 @@ export default function RootLayout({
         className={`${outfit.variable} ${montserrat.variable} ${jetbrainsMono.variable} antialiased`}
         suppressHydrationWarning
       >
+        <ThemeInitializer />
         {children}
       </body>
     </html>
